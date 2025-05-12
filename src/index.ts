@@ -157,20 +157,40 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           const windowNumber = await window.number;
           const isCurrentWindow = (await currentWindow.number) === windowNumber;
           
-          // Get window's buffer
-          const buffer = await window.buffer;
-          const bufferName = await buffer.name;
-          const bufferNumber = await buffer.number;
-          
-          // Get cursor position [row, col]
-          const cursor = await window.cursor;
-          
-          // Get buffer lines
           try {
-            // Use start=0 and end=-1 to get all lines (Neovim convention)
+            // Get window's buffer
+            const buffer = await window.buffer;
+            console.error(`Got buffer for window ${windowNumber}`);
+            
+            // Get buffer info with error handling
+            let bufferName = "Unknown";
+            try {
+              bufferName = await buffer.name || "Unnamed"; 
+            } catch (error) {
+              console.error(`Error getting buffer name: ${error}`);
+            }
+            
+            // Get buffer number with fallback
+            let bufferNumber = "Unknown";
+            try {
+              bufferNumber = await buffer.number;
+              console.error(`Got buffer number: ${bufferNumber}`);
+            } catch (error) {
+              console.error(`Error getting buffer number: ${error}`);
+            }
+            
+            // Get cursor position with fallback
+            let cursor = [1, 0]; // Default to line 1, column 0
+            try {
+              cursor = await window.cursor;
+            } catch (error) {
+              console.error(`Error getting cursor: ${error}`);
+            }
+            
+            // Get buffer lines
             const start = 0;
             const end = -1; // Special value in Neovim meaning "until the end of the buffer"
-            console.error(`Getting lines for buffer ${bufferNumber} from ${start} to ${end} (all lines)`);
+            console.error(`Getting lines for buffer ${bufferNumber || "Unknown"} from ${start} to ${end} (all lines)`);
             
             // Get the buffer content
             const content = await buffer.getLines(start, end, false);
@@ -179,9 +199,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const contentWithCursor = content.map((line: string, idx: number) => {
               if (isCurrentWindow && idx === cursor[0] - 1) {
                 // Insert cursor marker at the position
-                const beforeCursor = line.substring(0, cursor[1]);
-                const afterCursor = line.substring(cursor[1]);
-                return `${beforeCursor}|${afterCursor}`;
+                try {
+                  const beforeCursor = line.substring(0, cursor[1]);
+                  const afterCursor = line.substring(cursor[1]);
+                  return `${beforeCursor}|${afterCursor}`;
+                } catch (error) {
+                  console.error(`Error adding cursor marker: ${error}`);
+                  return line + " |"; // Add cursor at the end as fallback
+                }
               }
               return line;
             });
@@ -197,15 +222,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             });
           } catch (error) {
             // Handle any errors with buffer operations
-            console.error(`Error getting buffer content for buffer ${bufferNumber}: ${error}`);
+            console.error(`Error processing buffer: ${error}`);
             
             // Add error information to the result
             result.push({
-              windowNumber,
+              windowNumber: windowNumber || "Unknown",
               isCurrentWindow,
-              bufferNumber,
-              bufferName,
-              cursor,
+              bufferNumber: "Error",
+              bufferName: bufferName || "Error",
+              cursor: [0, 0],
               content: `Error retrieving buffer content: ${error}`
             });
           }
