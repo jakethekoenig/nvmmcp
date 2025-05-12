@@ -157,13 +157,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           const windowNumber = await window.number;
           const isCurrentWindow = (await currentWindow.number) === windowNumber;
           
+          // Initialize variables outside try block for scope
+          let buffer: any;
+          let bufferName = "Unknown";
+          let bufferNumber = "Unknown";
+          let cursor = [1, 0]; // Default to line 1, column 0
+          
           try {
             // Get window's buffer
-            const buffer = await window.buffer;
+            buffer = await window.buffer;
             console.error(`Got buffer for window ${windowNumber}`);
             
             // Get buffer info with error handling
-            let bufferName = "Unknown";
             try {
               bufferName = await buffer.name || "Unnamed"; 
             } catch (error) {
@@ -171,7 +176,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
             
             // Get buffer number with fallback
-            let bufferNumber = "Unknown";
             try {
               bufferNumber = await buffer.number;
               console.error(`Got buffer number: ${bufferNumber}`);
@@ -180,7 +184,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
             
             // Get cursor position with fallback
-            let cursor = [1, 0]; // Default to line 1, column 0
             try {
               cursor = await window.cursor;
             } catch (error) {
@@ -229,7 +232,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               windowNumber: windowNumber || "Unknown",
               isCurrentWindow,
               bufferNumber: "Error",
-              bufferName: bufferName || "Error",
+              bufferName: "Error", // Use a string literal instead of potentially undefined variable
               cursor: [0, 0],
               content: `Error retrieving buffer content: ${error}`
             });
