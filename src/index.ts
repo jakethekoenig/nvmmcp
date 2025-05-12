@@ -103,24 +103,46 @@ const tools = [
   },
 ];
 
-// Create proper request schemas
+// Create proper request schemas using the MCP protocol standard method names
 const ListToolsRequestSchema = z.object({
-  method: z.literal("mcp.list_tools"),
+  method: z.literal("tools/list"),
 });
 
 const CallToolRequestSchema = z.object({
-  method: z.literal("mcp.call_tool"),
+  method: z.literal("tools/call"),
   params: z.object({
     name: z.string(),
     arguments: z.any(),
   }),
 });
 
-// Handle tool requests
+const ListPromptsRequestSchema = z.object({
+  method: z.literal("prompts/list"),
+});
+
+const ListResourcesRequestSchema = z.object({
+  method: z.literal("resources/list"),
+});
+
+// Handle tools/list request
 server.setRequestHandler(ListToolsRequestSchema, async () => {
+  console.error("Received tools/list request");
   return { tools };
 });
 
+// Handle prompts/list request (return empty list as we don't provide prompts)
+server.setRequestHandler(ListPromptsRequestSchema, async () => {
+  console.error("Received prompts/list request");
+  return { prompts: [] };
+});
+
+// Handle resources/list request (return empty list as we don't provide resources)
+server.setRequestHandler(ListResourcesRequestSchema, async () => {
+  console.error("Received resources/list request");
+  return { resources: [] };
+});
+
+// Handle tools/call request
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     const { name, arguments: args } = request.params;

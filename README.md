@@ -70,6 +70,32 @@ npm install
 npm run build
 ```
 
+### Running Locally
+
+For local development without installing from npm, set up your MCP configuration to point directly to the built JavaScript file:
+
+```json
+{
+  "mcpServers": {
+    "nvim": {
+      "command": "node",
+      "args": [
+        "/path/to/your/nvmmcp/dist/index.js",
+        "/tmp/nvmmcp_bridge"
+      ]
+    }
+  }
+}
+```
+
+Replace `/path/to/your/nvmmcp` with the actual path to your local clone of this repository.
+
+Then start Neovim with the socket:
+
+```bash
+nvim --listen /tmp/nvmmcp_bridge
+```
+
 ## License
 
 ISC
