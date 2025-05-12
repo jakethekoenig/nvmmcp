@@ -166,29 +166,50 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           const cursor = await window.cursor;
           
           // Get buffer lines
-          const lineCount = await buffer.length;
-          const content = await buffer.getLines(0, lineCount, false);
-          
-          // Format content with cursor marker
-          const contentWithCursor = content.map((line: string, idx: number) => {
-            if (isCurrentWindow && idx === cursor[0] - 1) {
-              // Insert cursor marker at the position
-              const beforeCursor = line.substring(0, cursor[1]);
-              const afterCursor = line.substring(cursor[1]);
-              return `${beforeCursor}|${afterCursor}`;
-            }
-            return line;
-          });
-          
-          // Add window info to result
-          result.push({
-            windowNumber,
-            isCurrentWindow,
-            bufferNumber,
-            bufferName,
-            cursor,
-            content: contentWithCursor.join('\n')
-          });
+          try {
+            // Get line count and ensure it's an integer
+            const lineCount = await buffer.length;
+            const start = 0;
+            const end = parseInt(String(lineCount), 10);
+            console.error(`Getting lines for buffer ${bufferNumber} from ${start} to ${end}`);
+            
+            // Get the buffer content
+            const content = await buffer.getLines(start, end, false);
+            
+            // Format content with cursor marker
+            const contentWithCursor = content.map((line: string, idx: number) => {
+              if (isCurrentWindow && idx === cursor[0] - 1) {
+                // Insert cursor marker at the position
+                const beforeCursor = line.substring(0, cursor[1]);
+                const afterCursor = line.substring(cursor[1]);
+                return `${beforeCursor}|${afterCursor}`;
+              }
+              return line;
+            });
+            
+            // Add window info to result
+            result.push({
+              windowNumber,
+              isCurrentWindow,
+              bufferNumber,
+              bufferName,
+              cursor,
+              content: contentWithCursor.join('\n')
+            });
+          } catch (error) {
+            // Handle any errors with buffer operations
+            console.error(`Error getting buffer content for buffer ${bufferNumber}: ${error}`);
+            
+            // Add error information to the result
+            result.push({
+              windowNumber,
+              isCurrentWindow,
+              bufferNumber,
+              bufferName,
+              cursor,
+              content: `Error retrieving buffer content: ${error}`
+            });
+          }
         }
         
         // Format the result as text
