@@ -116,30 +116,10 @@ const CallToolRequestSchema = z.object({
   }),
 });
 
-const ListPromptsRequestSchema = z.object({
-  method: z.literal("prompts/list"),
-});
-
-const ListResourcesRequestSchema = z.object({
-  method: z.literal("resources/list"),
-});
-
 // Handle tools/list request
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   console.error("Received tools/list request");
   return { tools };
-});
-
-// Handle prompts/list request (return empty list as we don't provide prompts)
-server.setRequestHandler(ListPromptsRequestSchema, async () => {
-  console.error("Received prompts/list request");
-  return { prompts: [] };
-});
-
-// Handle resources/list request (return empty list as we don't provide resources)
-server.setRequestHandler(ListResourcesRequestSchema, async () => {
-  console.error("Received resources/list request");
-  return { resources: [] };
 });
 
 // Handle tools/call request
