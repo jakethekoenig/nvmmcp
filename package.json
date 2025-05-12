@@ -1,0 +1,40 @@
+{
+  "name": "nvmmcp",
+  "version": "1.0.0",
+  "description": "Neovim MCP server for communicating with Neovim via RPC",
+  "main": "dist/index.js",
+  "bin": {
+    "nvmmcp": "dist/index.js"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node --esm src/index.ts",
+    "prepare": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jakethekoenig/nvmmcp.git"
+  },
+  "keywords": ["neovim", "mcp", "rpc", "ai", "claude", "assistant"],
+  "author": "jakethekoenig",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/jakethekoenig/nvmmcp/issues"
+  },
+  "homepage": "https://github.com/jakethekoenig/nvmmcp#readme",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.1.0",
+    "neovim": "^4.10.1",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.0.0"
+  }
+}
