@@ -167,11 +167,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           
           // Get buffer lines
           try {
-            // Get line count and ensure it's an integer
-            const lineCount = await buffer.length;
+            // Use start=0 and end=-1 to get all lines (Neovim convention)
             const start = 0;
-            const end = parseInt(String(lineCount), 10);
-            console.error(`Getting lines for buffer ${bufferNumber} from ${start} to ${end}`);
+            const end = -1; // Special value in Neovim meaning "until the end of the buffer"
+            console.error(`Getting lines for buffer ${bufferNumber} from ${start} to ${end} (all lines)`);
             
             // Get the buffer content
             const content = await buffer.getLines(start, end, false);
