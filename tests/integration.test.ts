@@ -1,9 +1,9 @@
 // Integration test for nvmmcp
-import { spawn, ChildProcess } from 'child_process';
-import * as path from 'path';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as net from 'net';
+const childProcess = require('child_process');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const net = require('net');
 
 // Timeout for tests (ms)
 const TEST_TIMEOUT = 15000;
@@ -33,8 +33,8 @@ describe('nvmmcp integration test', () => {
   let tempDir: string;
   let socketPath: string;
   let testFilePath: string;
-  let nvimProcess: ChildProcess;
-  let nvmmcpProcess: ChildProcess;
+  let nvimProcess: any;
+  let nvmmcpProcess: any;
   let responses: string[] = [];
   
   beforeAll(async () => {
@@ -48,7 +48,7 @@ describe('nvmmcp integration test', () => {
     console.log(`Test file path: ${testFilePath}`);
     
     // Start Neovim with socket
-    nvimProcess = spawn('nvim', ['--headless', '--clean', '--listen', socketPath]);
+    nvimProcess = childProcess.spawn('nvim', ['--headless', '--clean', '--listen', socketPath]);
     console.log('Started NeoVim process');
     
     // Capture NeoVim output for debugging
@@ -80,7 +80,7 @@ describe('nvmmcp integration test', () => {
     const cwd = process.cwd();
     const serverPath = path.join(cwd, 'dist', 'index.js');
     
-    nvmmcpProcess = spawn('node', [serverPath, socketPath], {
+    nvmmcpProcess = childProcess.spawn('node', [serverPath, socketPath], {
       stdio: ['pipe', 'pipe', 'pipe']
     });
     console.log(`Started nvmmcp process with ${serverPath} ${socketPath}`);

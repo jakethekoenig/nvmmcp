@@ -1,15 +1,15 @@
-export default {
+/** @type {import('ts-jest').JestConfigWithTsJest} */
+module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   transform: {
-    '^.+\\.tsx?$': ['ts-jest', {
-      useESM: true,
-      isolatedModules: true
-    }]
-  },
-  extensionsToTreatAsEsm: ['.ts'],
-  moduleNameMapper: {
-    '^(\\.{1,2}/.*)\\.js$': '$1',
+    '^.+\\.tsx?$': [
+      'ts-jest',
+      {
+        useESM: false, // Use CommonJS for tests
+        isolatedModules: true
+      }
+    ]
   },
   testTimeout: 30000, // Longer timeout for integration tests
   testMatch: [
