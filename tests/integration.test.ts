@@ -1,15 +1,9 @@
 // Integration test for nvmmcp
 import { spawn, ChildProcess } from 'child_process';
-import path from 'path';
-import fs from 'fs';
-import os from 'os';
-import net from 'net';
-import { fileURLToPath } from 'url';
-import { setTimeout } from 'timers/promises';
-
-// Get the directory name for this ES module
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as net from 'net';
 
 // Timeout for tests (ms)
 const TEST_TIMEOUT = 15000;
@@ -31,7 +25,7 @@ async function waitForFile(filePath: string, timeout: number): Promise<void> {
     if (Date.now() - startTime > timeout) {
       throw new Error(`Timeout waiting for file: ${filePath}`);
     }
-    await setTimeout(100);
+    await new Promise(resolve => setTimeout(resolve, 100));
   }
 }
 
@@ -80,7 +74,7 @@ describe('nvmmcp integration test', () => {
     }
     
     // Give NeoVim a moment to fully initialize
-    await setTimeout(1000);
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
     // Start nvmmcp server
     const cwd = process.cwd();
@@ -109,7 +103,7 @@ describe('nvmmcp integration test', () => {
     });
     
     // Give the server time to start up
-    await setTimeout(1000);
+    await new Promise(resolve => setTimeout(resolve, 1000));
   }, TEST_TIMEOUT);
   
   afterAll(() => {
@@ -143,7 +137,7 @@ describe('nvmmcp integration test', () => {
     async function sendMcpRequest(message: MCPMessage): Promise<MCPMessage> {
       return new Promise((resolve, reject) => {
         const messageText = JSON.stringify(message) + '\n';
-        const timeout = setTimeout(() => {
+        const timeoutId = setTimeout(() => {
           reject(new Error(`Timeout waiting for response to message ID ${message.id}`));
         }, 5000);
         
@@ -162,7 +156,7 @@ describe('nvmmcp integration test', () => {
                 const response = JSON.parse(line) as MCPMessage;
                 
                 if (response.id === message.id) {
-                  clearTimeout(timeout);
+                  clearTimeout(timeoutId);
                   nvmmcpProcess.stdout?.removeListener('data', responseCollector);
                   resolve(response);
                   return;
@@ -241,7 +235,7 @@ describe('nvmmcp integration test', () => {
     expect(commandModeResponse.result.isError).toBeUndefined();
     
     // Step 4: Wait a moment for file operations to complete
-    await setTimeout(1000);
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
     // Step 5: Verify the file exists and has the expected content
     try {
