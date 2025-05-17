@@ -187,22 +187,74 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               // Use a direct API call to nvim to get the buffer line count
               console.error("Getting buffer line count...");
               
-              // Method that should work reliably in Neovim: 
-              // Get line count directly using nvim_buf_line_count API
-              console.error(`Getting buffer ID: ${await buffer.id}`);
-              const lineCountResult = await nvim.request('nvim_buf_line_count', [await buffer.id]);
-              console.error(`Retrieved line count via API: ${lineCountResult}`);
+              // Get the buffer ID, ensuring it's resolved
+              const bufferId = await buffer.id;
+              console.error(`Buffer ID: ${bufferId} (type: ${typeof bufferId})`);
               
-              // Use the actual line count
-              const lineCount = lineCountResult;
-              const method = "nvim_buf_line_count API call";
+              // Method that should work reliably: use buffer.length
+              const bufLen = await buffer.length;
+              console.error(`Buffer length property: ${bufLen} (type: ${typeof bufLen})`);
+              
+              // Ensure we have a valid integer to prevent the "Wrong type for argument 2" error
+              // Convert to a JavaScript number using parseInt to ensure it's an integer
+              // The user is still getting the type error, so let's be extra cautious
+              const lineCount = parseInt(String(bufLen), 10);
+              console.error(`Final line count: ${lineCount} (type: ${typeof lineCount})`);
+              
+              // Double check it's actually an integer, not a float
+              if (!Number.isInteger(lineCount)) {
+                console.error(`WARNING: lineCount is not an integer: ${lineCount}`);
+              }
+              
+              const method = "buffer.length property";
               
               console.error(`Line count (using ${method}): ${lineCount}`);
               
-              // Try to get buffer content
+              // Try to get buffer content directly using nvim_buf_get_lines API
+              // to ensure exact parameter types
               console.error(`Getting buffer content with line count: ${lineCount}...`);
-              const content = await buffer.getLines(0, lineCount, false);
-              console.error(`Got ${content.length} lines of content`);
+              
+              // Initialize content variable
+              let content = [];
+              
+              try {
+                // First try the high-level buffer.getLines method
+                console.error(`Attempting to use buffer.getLines(0, ${lineCount}, false)...`);
+                content = await buffer.getLines(0, lineCount, false);
+                console.error(`Got ${content.length} lines using buffer.getLines`);
+              } catch (getlinesError) {
+                console.error(`buffer.getLines failed, falling back to direct API call: ${getlinesError}`);
+                
+                try {
+                  // Fall back to direct API call with carefully controlled types
+                  const bufferId = await buffer.id;
+                  
+                  // Cast all parameters to the expected types explicitly
+                  const start = 0;
+                  const end = Math.max(1, lineCount); // ensure it's at least 1 to avoid empty buffer issues
+                  
+                  console.error(`Using direct API call nvim_buf_get_lines with params:`, {
+                    buffer_id: bufferId,
+                    start,
+                    end,
+                    strict: false
+                  });
+                  
+                  // Use the direct API call
+                  content = await nvim.request('nvim_buf_get_lines', [
+                    bufferId,   // Buffer ID
+                    start,      // Start (inclusive, 0-indexed)
+                    end,        // End (exclusive, 0-indexed)
+                    false       // Strict
+                  ]);
+                  
+                  console.error(`Got ${content.length} lines using direct API call`);
+                } catch (apiError) {
+                  console.error(`Both methods failed to get buffer content: ${apiError}`);
+                  // Provide some default content to prevent further errors
+                  content = [`Error getting buffer content: ${apiError}`];
+                }
+              }
               
               // Format content with cursor marker
               const contentWithCursor = content.map((line: string, idx: number) => {
