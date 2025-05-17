@@ -150,8 +150,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           // Get cursor position
           const cursor = await window.cursor;
           
-          // Get buffer line count (important: don't use -1 as end parameter)
-          const lineCount = await buffer.length;
+          // Add debug logging to diagnose buffer properties
+          console.error(`Buffer object for window ${windowNumber}:`, 
+                        Object.getOwnPropertyNames(buffer));
+          
+          // Get line count using nvim API call instead of relying on buffer.length
+          const lineCount = await buffer.call('line', ['$']); 
+          console.error(`Got line count for buffer ${bufferNumber}: ${lineCount}`);
           
           // Get the buffer content using proper range values
           const content = await buffer.getLines(0, lineCount, false);
