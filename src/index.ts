@@ -29,7 +29,6 @@ try {
   }
   
   socketPath = normalizeSocketPath(rawSocketPath);
-  console.error(`Using socket path: ${socketPath}`);
 } catch (error) {
   console.error(`Error processing socket path: ${error}`);
   console.error("Usage: npx nvmmcp /path/to/nvim/socket");
@@ -65,16 +64,8 @@ async function connectToNeovim(): Promise<boolean> {
     };
     
     nvim = await attach(options);
-    
-    // Verify the connection is working by testing a simple command
-    try {
-      const apiInfo = await nvim.apiInfo;
-      console.error(`Successfully connected to Neovim (API level: ${apiInfo[0]})`);
-      return true;
-    } catch (apiError) {
-      console.error(`Connected but couldn't verify API: ${apiError}`);
-      return true; // Still consider it connected
-    }
+    console.error("Successfully connected to Neovim");
+    return true;
   } catch (error) {
     console.error(`Failed to connect to Neovim: ${error}`);
     console.error(getSocketTroubleshootingGuidance(socketPath));
@@ -169,11 +160,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     const { name, arguments: args } = request.params;
-    console.error(`Tool call: ${name} with args:`, args);
-
+    
     // Ensure we're connected to Neovim
     if (!isNeovimConnected()) {
-      console.error("Neovim connection not established, attempting to connect...");
       const connected = await connectToNeovim();
       if (!connected) {
         return {
@@ -189,10 +178,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // Handle different tools
     switch (name) {
       case "view_buffers": {
-        console.error("Starting view_buffers command");
         // Get all windows
         const windows = await nvim.windows;
-        console.error(`Found ${windows.length} windows`);
         const currentWindow = await nvim.window;
         
         let result = [];
@@ -200,19 +187,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Process each window
         for (const window of windows) {
           try {
-            console.error("Processing a window...");
             const windowNumber = await window.number;
-            console.error(`Window number: ${windowNumber}`);
             const isCurrentWindow = (await currentWindow.number) === windowNumber;
-            console.error(`Is current window: ${isCurrentWindow}`);
             
-            // Get window's buffer with detailed error logging
-            console.error(`Getting buffer for window ${windowNumber}...`);
+            // Get window's buffer
             const buffer = await window.buffer;
             
             // Check if buffer is defined
             if (!buffer) {
-              console.error(`Buffer is undefined for window ${windowNumber}`);
               result.push({
                 windowNumber,
                 isCurrentWindow,
@@ -224,132 +206,60 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               continue;
             }
             
-            console.error(`Buffer type: ${typeof buffer}`);
-            console.error(`Buffer constructor: ${buffer.constructor?.name || 'unknown'}`);
-            console.error(`Buffer properties: ${Object.getOwnPropertyNames(buffer)}`);
+            // Get buffer info
+            const bufferName = await buffer.name;
+            const bufferNumber = await buffer.number;
             
-            // Try different API methods with explicit error handling
+            // Get cursor position
+            const cursor = await window.cursor;
+            
+            // Get buffer line count using buffer.length
+            const bufLen = await buffer.length;
+            const lineCount = parseInt(String(bufLen), 10);
+            
+            // Get the buffer content
+            let content = [];
             try {
-              // Get buffer info
-              console.error("Getting buffer name...");
-              const bufferName = await buffer.name;
-              console.error(`Buffer name: ${bufferName || 'Unnamed'}`);
-              
-              console.error("Getting buffer number...");
-              const bufferNumber = await buffer.number;
-              console.error(`Buffer number: ${bufferNumber}`);
-              
-              // Get cursor position
-              console.error("Getting cursor position...");
-              const cursor = await window.cursor;
-              console.error(`Cursor position: ${cursor}`);
-              
-              // Use a direct API call to nvim to get the buffer line count
-              console.error("Getting buffer line count...");
-              
-              // Get the buffer ID, ensuring it's resolved
-              const bufferId = await buffer.id;
-              console.error(`Buffer ID: ${bufferId} (type: ${typeof bufferId})`);
-              
-              // Method that should work reliably: use buffer.length
-              const bufLen = await buffer.length;
-              console.error(`Buffer length property: ${bufLen} (type: ${typeof bufLen})`);
-              
-              // Ensure we have a valid integer to prevent the "Wrong type for argument 2" error
-              // Convert to a JavaScript number using parseInt to ensure it's an integer
-              // The user is still getting the type error, so let's be extra cautious
-              const lineCount = parseInt(String(bufLen), 10);
-              console.error(`Final line count: ${lineCount} (type: ${typeof lineCount})`);
-              
-              // Double check it's actually an integer, not a float
-              if (!Number.isInteger(lineCount)) {
-                console.error(`WARNING: lineCount is not an integer: ${lineCount}`);
-              }
-              
-              const method = "buffer.length property";
-              
-              console.error(`Line count (using ${method}): ${lineCount}`);
-              
-              // Try to get buffer content directly using nvim_buf_get_lines API
-              // to ensure exact parameter types
-              console.error(`Getting buffer content with line count: ${lineCount}...`);
-              
-              // Initialize content variable
-              let content = [];
-              
+              content = await buffer.getLines(0, lineCount, false);
+            } catch (getlinesError) {
               try {
-                // First try the high-level buffer.getLines method
-                console.error(`Attempting to use buffer.getLines(0, ${lineCount}, false)...`);
-                content = await buffer.getLines(0, lineCount, false);
-                console.error(`Got ${content.length} lines using buffer.getLines`);
-              } catch (getlinesError) {
-                console.error(`buffer.getLines failed, falling back to direct API call: ${getlinesError}`);
+                // Fall back to direct API call
+                const bufferId = await buffer.id;
+                const start = 0;
+                const end = Math.max(1, lineCount);
                 
-                try {
-                  // Fall back to direct API call with carefully controlled types
-                  const bufferId = await buffer.id;
-                  
-                  // Cast all parameters to the expected types explicitly
-                  const start = 0;
-                  const end = Math.max(1, lineCount); // ensure it's at least 1 to avoid empty buffer issues
-                  
-                  console.error(`Using direct API call nvim_buf_get_lines with params:`, {
-                    buffer_id: bufferId,
-                    start,
-                    end,
-                    strict: false
-                  });
-                  
-                  // Use the direct API call
-                  content = await nvim.request('nvim_buf_get_lines', [
-                    bufferId,   // Buffer ID
-                    start,      // Start (inclusive, 0-indexed)
-                    end,        // End (exclusive, 0-indexed)
-                    false       // Strict
-                  ]);
-                  
-                  console.error(`Got ${content.length} lines using direct API call`);
-                } catch (apiError) {
-                  console.error(`Both methods failed to get buffer content: ${apiError}`);
-                  // Provide some default content to prevent further errors
-                  content = [`Error getting buffer content: ${apiError}`];
-                }
+                content = await nvim.request('nvim_buf_get_lines', [
+                  bufferId,
+                  start,
+                  end,
+                  false
+                ]);
+              } catch (apiError) {
+                content = [`Error getting buffer content: ${apiError}`];
               }
-              
-              // Format content with cursor marker
-              const contentWithCursor = content.map((line: string, idx: number) => {
-                if (isCurrentWindow && idx === cursor[0] - 1) {
-                  // Insert cursor marker at the position
-                  const beforeCursor = line.substring(0, cursor[1]);
-                  const afterCursor = line.substring(cursor[1]);
-                  return `${beforeCursor}|${afterCursor}`;
-                }
-                return line;
-              });
-              
-              // Add window info to result
-              result.push({
-                windowNumber,
-                isCurrentWindow,
-                bufferNumber,
-                bufferName: bufferName || "Unnamed",
-                cursor,
-                content: contentWithCursor.join('\n')
-              });
-              
-            } catch (bufferError) {
-              console.error(`Error processing buffer details: ${bufferError}`);
-              result.push({
-                windowNumber,
-                isCurrentWindow,
-                bufferNumber: "Error",
-                bufferName: "Error processing buffer",
-                cursor: [0, 0],
-                content: `Error processing buffer: ${bufferError}`
-              });
             }
+            
+            // Format content with cursor marker
+            const contentWithCursor = content.map((line: string, idx: number) => {
+              if (isCurrentWindow && idx === cursor[0] - 1) {
+                // Insert cursor marker at the position
+                const beforeCursor = line.substring(0, cursor[1]);
+                const afterCursor = line.substring(cursor[1]);
+                return `${beforeCursor}|${afterCursor}`;
+              }
+              return line;
+            });
+            
+            // Add window info to result
+            result.push({
+              windowNumber,
+              isCurrentWindow,
+              bufferNumber,
+              bufferName: bufferName || "Unnamed",
+              cursor,
+              content: contentWithCursor.join('\n')
+            });
           } catch (windowError) {
-            console.error(`Error processing window: ${windowError}`);
             result.push({
               windowNumber: "Error",
               isCurrentWindow: false,
@@ -362,7 +272,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
         
         // Format the result as text
-        console.error(`Formatting ${result.length} window results...`);
         const formattedResult = result.map(window => {
           return `Window ${window.windowNumber}${window.isCurrentWindow ? ' (current)' : ''} - Buffer ${window.bufferNumber} (${window.bufferName})
 Cursor at line ${window.cursor[0]}, column ${window.cursor[1]}
@@ -371,7 +280,6 @@ ${window.content}
 ${'='.repeat(80)}`;
         }).join('\n\n');
         
-        console.error("View buffers command completed successfully");
         return {
           content: [{ type: "text", text: formattedResult || "No visible buffers found" }]
         } as ToolResponse;

@@ -9,9 +9,6 @@ import { existsSync } from 'fs';
 
 /**
  * Validates and normalizes a socket path
- * 
- * @param socketPath The socket path provided by the user
- * @returns Normalized socket path
  */
 export function normalizeSocketPath(socketPath: string): string {
   if (!socketPath) {
@@ -25,7 +22,6 @@ export function normalizeSocketPath(socketPath: string): string {
   
   // Ensure absolute path
   if (!path.isAbsolute(socketPath)) {
-    // If relative, make it relative to current working directory
     socketPath = path.join(process.cwd(), socketPath);
   }
   
@@ -49,7 +45,6 @@ export async function checkSocketExists(socketPath: string): Promise<boolean> {
  */
 export function getSocketTroubleshootingGuidance(socketPath: string): string {
   const socketDir = path.dirname(socketPath);
-  const socketExistsSync = existsSync(socketPath);
   const socketDirExistsSync = existsSync(socketDir);
   
   let guidance = `Socket not found at: ${socketPath}\n`;
@@ -63,8 +58,6 @@ export function getSocketTroubleshootingGuidance(socketPath: string): string {
   if (socketPath.includes(' ')) {
     guidance += `Note: Your socket path contains spaces. Make sure to quote it properly.\n`;
   }
-  
-  guidance += `For temporary sockets, you can use: /tmp/nvim-socket\n`;
   
   return guidance;
 }

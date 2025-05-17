@@ -2,7 +2,6 @@
 
 /**
  * Test script to verify that the server starts up properly
- * This is used in CI to ensure the server can start without errors
  * even when Neovim isn't available.
  */
 
@@ -12,17 +11,14 @@ import fs from 'fs';
 import os from 'os';
 import { fileURLToPath } from 'url';
 
-// Define an async main function since we need top-level await
+// Define async main function
 async function main() {
-  // Get the directory name in ESM
+  // Get directory name in ESM
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
 
   // Create a temporary socket path for testing
   const tempSocketPath = path.join(os.tmpdir(), `nvmmcp-test-${Date.now()}`);
-
-  // Start the server with the test socket path
-  console.log(`Starting server with socket path: ${tempSocketPath}`);
 
   // Path to the server executable
   const serverPath = path.join(__dirname, '..', 'dist', 'index.js');
@@ -57,9 +53,8 @@ async function main() {
       startupSuccessful = true;
     }
     
-    // Check for fatal errors (not the expected connection errors)
+    // Check for fatal errors
     if (output.includes('Fatal error running server:')) {
-      console.error('❌ Server encountered a fatal error');
       errorFound = true;
     }
   });
@@ -70,32 +65,29 @@ async function main() {
     process.exit(1);
   });
 
-  // Use a promise to wait for the result
+  // Wait for the result
   return new Promise((resolve) => {
-    // Set a timeout to check results
     setTimeout(() => {
       // Kill the server process
       serverProcess.kill();
       
-      console.log('\nServer output:\n' + serverOutput);
-      
       if (errorFound) {
         console.error('❌ Test failed: Server encountered errors');
-        resolve(1); // Exit with error code
+        resolve(1);
       }
       
       if (!startupSuccessful) {
         console.error('❌ Test failed: Server did not start successfully');
-        resolve(1); // Exit with error code
+        resolve(1);
       }
       
       console.log('✅ Server startup test passed');
-      resolve(0); // Exit with success code
-    }, 5000); // Wait 5 seconds for the server to start
+      resolve(0);
+    }, 5000);
   });
 }
 
-// Run the main function and exit with the appropriate code
+// Run the main function
 main().then(exitCode => process.exit(exitCode)).catch(error => {
   console.error('Unexpected error:', error);
   process.exit(1);
