@@ -33,9 +33,7 @@ jobs:
       run: nvim --version
     
     - name: Install dependencies
-      run: |
-        # Try npm ci first (faster), fall back to npm install if package-lock.json is out of sync
-        npm ci || npm install
+      run: npm install
     
     - name: Build project
       run: npm run build
