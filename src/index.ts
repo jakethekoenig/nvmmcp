@@ -423,11 +423,6 @@ ${'='.repeat(80)}`;
   }
 });
 
-// Check if Neovim connection is ready and connected
-function isNeovimConnected(): boolean {
-  return nvim !== undefined && nvim !== null;
-}
-
 // Start server
 async function runServer() {
   // Try to connect to Neovim, but continue even if it fails
