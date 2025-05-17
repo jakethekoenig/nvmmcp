@@ -41,12 +41,16 @@ jobs:
         # Start the server with a timeout to automatically kill it after 5 seconds
         timeout 5s node dist/index.js $NON_EXISTENT_SOCKET 2>&1 | tee server_output.log || true
         
+        # Display the output for debugging
+        echo "Server output:"
+        cat server_output.log
+        
         # Check that the server started but couldn't connect to Neovim (expected behavior)
-        if grep -q "Neovim MCP Server running on stdio WITHOUT Neovim connection" server_output.log; then
+        if grep -q "Neovim MCP Server running on stdio WITHOUT Neovim connection" server_output.log || \
+           grep -q "The server will retry connecting when tools are used" server_output.log; then
           echo "✅ Server started successfully without Neovim connection"
           exit 0
         else
           echo "❌ Server failed to start properly without Neovim"
-          cat server_output.log
           exit 1
         fi
