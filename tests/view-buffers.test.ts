@@ -24,9 +24,19 @@ async function setupNeovim(socketPath: string): Promise<childProcess.ChildProces
     fs.mkdirSync(socketDir, { recursive: true });
   }
   
-  // Start Neovim with a socket connection
-  const nvimProcess = childProcess.spawn('nvim', 
-    ['--headless', '--listen', socketPath, '-c', 'e test.txt', '-c', 'normal! iTest content for buffer view']);
+  // Create a test file with known content
+  const testFilePath = path.join(socketDir, 'test.txt');
+  const testContent = 'Line 1: This is a test file\nLine 2: Created for testing view_buffers\nLine 3: The cursor should be here|';
+  fs.writeFileSync(testFilePath, testContent.replace('|', '')); // Remove the cursor marker from the file
+  
+  // Start Neovim with a socket connection and open our file
+  // Position cursor at the third line, column 30 (where the '|' marker was)
+  const nvimProcess = childProcess.spawn('nvim', [
+    '--headless', 
+    '--listen', socketPath, 
+    '-c', `e ${testFilePath}`,
+    '-c', 'normal! 3G30|' // Move to line 3, column 30
+  ]);
   
   // Wait for Neovim to be ready
   return new Promise((resolve, reject) => {
@@ -167,7 +177,10 @@ describe('view_buffers command test', () => {
     }
   });
   
-  test('should successfully retrieve buffer content', async () => {
+  test('should successfully retrieve buffer content with correct format', async () => {
+    // Get the absolute path of the test file for verification
+    const testFilePath = path.join(socketDir, 'test.txt');
+    
     // Start the MCP server
     mcpProcess = startMCPServer(socketPath);
     
@@ -177,15 +190,61 @@ describe('view_buffers command test', () => {
     // Call the view_buffers tool
     const result = await callViewBuffersTool(mcpProcess);
     
-    // Verify the result
+    // Verify the result contains basic expected elements
     expect(result).toBeTruthy();
     expect(result).toContain('jsonrpc');
     
-    // Expect to see buffer content in the response
-    expect(result).toContain('test.txt');
+    // Parse the JSON responses
+    const responses = result
+      .split('\n')
+      .filter(line => line.trim())
+      .map(line => JSON.parse(line));
+    
+    // Find the tools/call response (id: 2)
+    const toolResponse = responses.find(r => r.id === 2);
+    expect(toolResponse).toBeDefined();
+    expect(toolResponse.result).toBeDefined();
+    expect(toolResponse.result.content).toBeDefined();
+    expect(toolResponse.result.content[0].type).toBe('text');
+    
+    // Get the actual text content
+    const outputText = toolResponse.result.content[0].text;
+    console.log("Actual output text:", outputText);
+    
+    // Verify file content is correct
+    expect(outputText).toContain('Line 1: This is a test file');
+    expect(outputText).toContain('Line 2: Created for testing view_buffers');
+    
+    // Verify the cursor position is shown properly
+    // The cursor marker should be right before the word "here"
+    expect(outputText).toContain('Line 3: The cursor should be |here');
+    
+    // Verify window and buffer information is present
+    expect(outputText).toContain(`Buffer`);
+    expect(outputText).toContain(`(${testFilePath})`);
+    expect(outputText).toContain('Cursor at line 3, column 30');
+    
+    // Verify formatting with separator line
+    expect(outputText).toContain('='.repeat(80));
     
     // Specifically check for error messages to debug the issue
-    expect(result).not.toContain('Wrong type for argument 2 when calling nvim_buf_get_lines');
+    expect(outputText).not.toContain('Wrong type for argument 2 when calling nvim_buf_get_lines');
+    expect(outputText).not.toContain('Error retrieving buffer content');
+    
+    // Create an expected pattern for the output
+    const expectedPattern = new RegExp(
+      `Window \\d+.*Buffer \\d+ \\(${testFilePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\).*` + 
+      `Cursor at line 3, column 30.*` +
+      `Content:.*` +
+      `Line 1: This is a test file.*` +
+      `Line 2: Created for testing view_buffers.*` +
+      `Line 3: The cursor should be \\|here.*` +
+      `={80}`,
+      's' // dot matches newline
+    );
+    
+    // Test the full output format against our expected pattern
+    expect(outputText).toMatch(expectedPattern);
     
   }, TEST_TIMEOUT);
 });
