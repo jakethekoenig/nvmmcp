@@ -53,7 +53,7 @@ const SendCommandModeArgsSchema = z.object({
 const server = new Server(
   {
     name: "neovim-mcp-server",
-    version: "1.0.0",
+    version: "0.0.0",
   },
   {
     capabilities: {
