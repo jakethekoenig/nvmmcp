@@ -184,42 +184,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               const cursor = await window.cursor;
               console.error(`Cursor position: ${cursor}`);
               
-              // Try multiple methods to get line count
-              console.error("Trying to get line count...");
-              let lineCount;
-              let method = "";
+              // Use a direct API call to nvim to get the buffer line count
+              console.error("Getting buffer line count...");
               
-              try {
-                // Method 1: Using buffer.call()
-                lineCount = await buffer.call('line', ['$']);
-                method = "buffer.call('line', ['$'])";
-              } catch (e) {
-                console.error(`Method 1 failed: ${e}`);
-                try {
-                  // Method 2: Using nvim.call() directly
-                  lineCount = await nvim.call('line', ['$', await buffer.id]);
-                  method = "nvim.call('line', ['$', buffer.id])";
-                } catch (e) {
-                  console.error(`Method 2 failed: ${e}`);
-                  try {
-                    // Method 3: Try a different approach with buffer.length prop if available
-                    if ('length' in buffer) {
-                      lineCount = await buffer.length;
-                      method = "buffer.length";
-                    } else {
-                      // Method 4: Fallback - request lines until we get an error
-                      // Starting with a reasonable max (1000)
-                      console.error("Trying fallback method - using hard-coded value");
-                      lineCount = 1000; 
-                      method = "fallback (1000)";
-                    }
-                  } catch (e) {
-                    console.error(`All methods failed, using fallback: ${e}`);
-                    lineCount = 1000;
-                    method = "fallback after all failed";
-                  }
-                }
-              }
+              // Method that should work reliably in Neovim: 
+              // Get line count directly using nvim_buf_line_count API
+              console.error(`Getting buffer ID: ${await buffer.id}`);
+              const lineCountResult = await nvim.request('nvim_buf_line_count', [await buffer.id]);
+              console.error(`Retrieved line count via API: ${lineCountResult}`);
+              
+              // Use the actual line count
+              const lineCount = lineCountResult;
+              const method = "nvim_buf_line_count API call";
               
               console.error(`Line count (using ${method}): ${lineCount}`);
               
