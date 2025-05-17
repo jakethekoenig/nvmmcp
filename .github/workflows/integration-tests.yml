@@ -41,6 +41,4 @@ jobs:
       run: npm run build
     
     - name: Run integration tests
-      run: |
-        # Run tests with CommonJS compatibility mode
-        NODE_OPTIONS=--no-warnings jest tests/integration.test.ts --config=jest.config.cjs --forceExit --testEnvironment=node
+      run: npm run test:integration
