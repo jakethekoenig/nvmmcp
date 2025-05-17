@@ -96,6 +96,43 @@ Then start Neovim with the socket:
 nvim --listen /tmp/nvmmcp_bridge
 ```
 
+### Testing
+
+The project includes an integration test that verifies communication between the nvmmcp server and Neovim.
+
+#### Running the integration test
+
+Make sure you have Neovim installed and available in your PATH, then run:
+
+```bash
+# Make the script executable if needed
+chmod +x run-integration-tests.sh
+
+# Run the integration tests
+./run-integration-tests.sh
+```
+
+This test will:
+1. Start a Neovim instance with a socket bridge
+2. Connect the nvmmcp server to that socket
+3. Test sending normal mode commands to write text
+4. Test sending command mode commands to save to a file
+5. Verify the file was created with the correct content
+
+You can also run the test directly with Jest:
+
+```bash
+npm run test:integration
+```
+
+#### What's being tested
+
+The integration test validates that:
+- The server can connect to a Neovim instance
+- Normal mode commands can be sent and executed
+- Command mode commands can be sent and executed
+- File operations work correctly
+
 ## License
 
 ISC

@@ -1,19 +1,19 @@
-name: CI
+name: Integration Tests
 
 on:
-  push:
-    branches: [ main ]
   pull_request:
+    branches: [ main ]
+  push:
     branches: [ main ]
 
 jobs:
-  build:
+  integration-test:
     runs-on: ubuntu-latest
-
+    
     strategy:
       matrix:
         node-version: [18.x, 20.x]
-
+    
     steps:
     - uses: actions/checkout@v3
     
@@ -23,11 +23,20 @@ jobs:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
     
+    - name: Install Neovim
+      run: |
+        sudo add-apt-repository ppa:neovim-ppa/stable -y
+        sudo apt-get update -q
+        sudo apt-get install -y neovim
+    
+    - name: Check Neovim installation
+      run: nvim --version
+    
     - name: Install dependencies
       run: npm install
-      
-    - name: Check TypeScript compilation
+    
+    - name: Build project
       run: npm run build
-      
-    - name: Run test script
-      run: ./test-nvmmcp.sh
+    
+    - name: Run integration tests
+      run: npm run test:integration
