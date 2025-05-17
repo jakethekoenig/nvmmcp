@@ -129,61 +129,152 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // Handle different tools
     switch (name) {
       case "view_buffers": {
+        console.error("Starting view_buffers command");
         // Get all windows
         const windows = await nvim.windows;
+        console.error(`Found ${windows.length} windows`);
         const currentWindow = await nvim.window;
         
         let result = [];
         
         // Process each window
         for (const window of windows) {
-          const windowNumber = await window.number;
-          const isCurrentWindow = (await currentWindow.number) === windowNumber;
-          
-          // Get window's buffer
-          const buffer = await window.buffer;
-          
-          // Get buffer info
-          const bufferName = await buffer.name;
-          const bufferNumber = await buffer.number;
-          
-          // Get cursor position
-          const cursor = await window.cursor;
-          
-          // Add debug logging to diagnose buffer properties
-          console.error(`Buffer object for window ${windowNumber}:`, 
-                        Object.getOwnPropertyNames(buffer));
-          
-          // Get line count using nvim API call instead of relying on buffer.length
-          const lineCount = await buffer.call('line', ['$']); 
-          console.error(`Got line count for buffer ${bufferNumber}: ${lineCount}`);
-          
-          // Get the buffer content using proper range values
-          const content = await buffer.getLines(0, lineCount, false);
-          
-          // Format content with cursor marker
-          const contentWithCursor = content.map((line: string, idx: number) => {
-            if (isCurrentWindow && idx === cursor[0] - 1) {
-              // Insert cursor marker at the position
-              const beforeCursor = line.substring(0, cursor[1]);
-              const afterCursor = line.substring(cursor[1]);
-              return `${beforeCursor}|${afterCursor}`;
+          try {
+            console.error("Processing a window...");
+            const windowNumber = await window.number;
+            console.error(`Window number: ${windowNumber}`);
+            const isCurrentWindow = (await currentWindow.number) === windowNumber;
+            console.error(`Is current window: ${isCurrentWindow}`);
+            
+            // Get window's buffer with detailed error logging
+            console.error(`Getting buffer for window ${windowNumber}...`);
+            const buffer = await window.buffer;
+            
+            // Check if buffer is defined
+            if (!buffer) {
+              console.error(`Buffer is undefined for window ${windowNumber}`);
+              result.push({
+                windowNumber,
+                isCurrentWindow,
+                bufferNumber: "Unknown",
+                bufferName: "Buffer is undefined",
+                cursor: [0, 0],
+                content: "Error: Buffer object is undefined"
+              });
+              continue;
             }
-            return line;
-          });
-          
-          // Add window info to result
-          result.push({
-            windowNumber,
-            isCurrentWindow,
-            bufferNumber,
-            bufferName: bufferName || "Unnamed",
-            cursor,
-            content: contentWithCursor.join('\n')
-          });
+            
+            console.error(`Buffer type: ${typeof buffer}`);
+            console.error(`Buffer constructor: ${buffer.constructor?.name || 'unknown'}`);
+            console.error(`Buffer properties: ${Object.getOwnPropertyNames(buffer)}`);
+            
+            // Try different API methods with explicit error handling
+            try {
+              // Get buffer info
+              console.error("Getting buffer name...");
+              const bufferName = await buffer.name;
+              console.error(`Buffer name: ${bufferName || 'Unnamed'}`);
+              
+              console.error("Getting buffer number...");
+              const bufferNumber = await buffer.number;
+              console.error(`Buffer number: ${bufferNumber}`);
+              
+              // Get cursor position
+              console.error("Getting cursor position...");
+              const cursor = await window.cursor;
+              console.error(`Cursor position: ${cursor}`);
+              
+              // Try multiple methods to get line count
+              console.error("Trying to get line count...");
+              let lineCount;
+              let method = "";
+              
+              try {
+                // Method 1: Using buffer.call()
+                lineCount = await buffer.call('line', ['$']);
+                method = "buffer.call('line', ['$'])";
+              } catch (e) {
+                console.error(`Method 1 failed: ${e}`);
+                try {
+                  // Method 2: Using nvim.call() directly
+                  lineCount = await nvim.call('line', ['$', await buffer.id]);
+                  method = "nvim.call('line', ['$', buffer.id])";
+                } catch (e) {
+                  console.error(`Method 2 failed: ${e}`);
+                  try {
+                    // Method 3: Try a different approach with buffer.length prop if available
+                    if ('length' in buffer) {
+                      lineCount = await buffer.length;
+                      method = "buffer.length";
+                    } else {
+                      // Method 4: Fallback - request lines until we get an error
+                      // Starting with a reasonable max (1000)
+                      console.error("Trying fallback method - using hard-coded value");
+                      lineCount = 1000; 
+                      method = "fallback (1000)";
+                    }
+                  } catch (e) {
+                    console.error(`All methods failed, using fallback: ${e}`);
+                    lineCount = 1000;
+                    method = "fallback after all failed";
+                  }
+                }
+              }
+              
+              console.error(`Line count (using ${method}): ${lineCount}`);
+              
+              // Try to get buffer content
+              console.error(`Getting buffer content with line count: ${lineCount}...`);
+              const content = await buffer.getLines(0, lineCount, false);
+              console.error(`Got ${content.length} lines of content`);
+              
+              // Format content with cursor marker
+              const contentWithCursor = content.map((line: string, idx: number) => {
+                if (isCurrentWindow && idx === cursor[0] - 1) {
+                  // Insert cursor marker at the position
+                  const beforeCursor = line.substring(0, cursor[1]);
+                  const afterCursor = line.substring(cursor[1]);
+                  return `${beforeCursor}|${afterCursor}`;
+                }
+                return line;
+              });
+              
+              // Add window info to result
+              result.push({
+                windowNumber,
+                isCurrentWindow,
+                bufferNumber,
+                bufferName: bufferName || "Unnamed",
+                cursor,
+                content: contentWithCursor.join('\n')
+              });
+              
+            } catch (bufferError) {
+              console.error(`Error processing buffer details: ${bufferError}`);
+              result.push({
+                windowNumber,
+                isCurrentWindow,
+                bufferNumber: "Error",
+                bufferName: "Error processing buffer",
+                cursor: [0, 0],
+                content: `Error processing buffer: ${bufferError}`
+              });
+            }
+          } catch (windowError) {
+            console.error(`Error processing window: ${windowError}`);
+            result.push({
+              windowNumber: "Error",
+              isCurrentWindow: false,
+              bufferNumber: "Error",
+              bufferName: "Error processing window",
+              cursor: [0, 0],
+              content: `Error processing window: ${windowError}`
+            });
+          }
         }
         
         // Format the result as text
+        console.error(`Formatting ${result.length} window results...`);
         const formattedResult = result.map(window => {
           return `Window ${window.windowNumber}${window.isCurrentWindow ? ' (current)' : ''} - Buffer ${window.bufferNumber} (${window.bufferName})
 Cursor at line ${window.cursor[0]}, column ${window.cursor[1]}
@@ -192,6 +283,7 @@ ${window.content}
 ${'='.repeat(80)}`;
         }).join('\n\n');
         
+        console.error("View buffers command completed successfully");
         return {
           content: [{ type: "text", text: formattedResult || "No visible buffers found" }]
         } as ToolResponse;
