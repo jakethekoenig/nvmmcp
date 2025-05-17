@@ -1,0 +1,44 @@
+name: Test View Buffers
+
+# This workflow is a separate test specifically for the view_buffers functionality
+# It's kept separate because it requires specific setup and might fail in some CI environments
+# Use it when you want to verify the view_buffers command behavior
+
+on:
+  # Only run manually via workflow_dispatch
+  workflow_dispatch:
+
+jobs:
+  test-view-buffers:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [20.x]
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+    
+    - name: Install Neovim
+      run: |
+        sudo add-apt-repository ppa:neovim-ppa/stable -y
+        sudo apt-get update -q
+        sudo apt-get install -y neovim
+    
+    - name: Check Neovim installation
+      run: nvim --version
+    
+    - name: Install dependencies
+      run: npm install
+    
+    - name: Build project
+      run: npm run build
+    
+    - name: Run view-buffers test
+      run: NODE_OPTIONS=--no-warnings npx jest "tests/view-buffers.test.ts" --config=jest.config.cjs --forceExit --testEnvironment=node
