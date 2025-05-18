@@ -13,13 +13,13 @@ This MCP server provides three main tools for AI model interaction with Neovim:
 ## Installation
 
 ```bash
-npm install -g nvmmcp
+npm install -g @abanteai/nvmmcp
 ```
 
 Or use without installing:
 
 ```bash
-npx nvmmcp /path/to/socket
+npx @abanteai/nvmmcp /path/to/socket
 ```
 
 ## Usage
@@ -43,7 +43,7 @@ Add this server to your MCP configuration:
       "command": "npx",
       "args": [
         "-y",
-        "nvmmcp",
+        "@abanteai/nvmmcp",
         "/tmp/nvmmcp_bridge"
       ]
     }
