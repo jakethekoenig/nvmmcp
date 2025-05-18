@@ -475,6 +475,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           
           // Format the result as text with visible range information
           const formattedResult = result.map(window => {
+            // Handle potential undefined values with defaults
+            const windowNumberText = window.windowNumber !== undefined ? window.windowNumber : 'N/A';
+            const bufferNameText = window.bufferName || 'Unnamed';
+            const cursorLine = window.cursor?.[0] !== undefined ? window.cursor[0] : 'N/A';
+            const cursorColumn = window.cursor?.[1] !== undefined ? window.cursor[1] : 'N/A';
+            
+            // Ensure content is a string
+            const contentText = window.content || "No content available";
+            
             const visibilityInfo = window.visibleRange 
               ? `Showing lines ${window.visibleRange.startLine}-${window.visibleRange.endLine} of ${window.totalLines} total lines (±${window.visibleRange.context} lines around cursor)`
               : 'Full content';
@@ -483,12 +492,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const activeBufferIndicator = window.isActiveBuffer 
               ? ' 🟢 [ACTIVE BUFFER - Commands in normal mode will affect this buffer]' 
               : '';
+            
+            // Construct window header with conditional buffer number
+            let windowHeader = `Window ${windowNumberText}${window.isCurrentWindow ? ' (current)' : ''}`;
+            
+            // Only add buffer number if it's defined
+            if (window.bufferNumber !== undefined) {
+              windowHeader += ` - Buffer ${window.bufferNumber}`;
+            }
+            
+            // Add buffer name and active indicator
+            windowHeader += ` (${bufferNameText})${activeBufferIndicator}`;
               
-            return `Window ${window.windowNumber}${window.isCurrentWindow ? ' (current)' : ''} - Buffer ${window.bufferNumber} (${window.bufferName})${activeBufferIndicator}
-Cursor at line ${window.cursor[0]}, column ${window.cursor[1]} (marked with 🔸)
+            return `${windowHeader}
+Cursor at line ${cursorLine}, column ${cursorColumn} (marked with 🔸)
 ${visibilityInfo}
 Content:
-${window.content}
+${contentText}
 ${'='.repeat(80)}`;
           }).join('\n\n');
           
