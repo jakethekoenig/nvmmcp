@@ -8,7 +8,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 
 // Socket utilities
-import { normalizeSocketPath, checkSocketExists, getSocketTroubleshootingGuidance } from './socket-utils.js';
+import { normalizeSocketPath, checkSocketExists, getSocketTroubleshootingGuidance, isTimeoutError } from './socket-utils.js';
 
 // Define types for working with the MCP SDK
 type NeovimClient = any;
@@ -51,24 +51,29 @@ async function connectToNeovim(): Promise<boolean> {
   const socketExists = await checkSocketExists(socketPath);
   if (!socketExists) {
     console.error(`Error: Socket file not found at ${socketPath}`);
-    console.error(getSocketTroubleshootingGuidance(socketPath));
+    console.error(getSocketTroubleshootingGuidance(socketPath, false));
     return false;
   }
   
   try {
-    // Connection options with timeout to prevent hanging indefinitely
+    // Connection options with shorter timeout to prevent hanging 
     const options = { 
       socket: socketPath,
-      // Set timeout to 5 seconds (in milliseconds)
-      timeout: 5000
+      // Set timeout to 2 seconds (in milliseconds)
+      timeout: 2000
     };
     
     nvim = await attach(options);
     console.error("Successfully connected to Neovim");
     return true;
   } catch (error) {
-    console.error(`Failed to connect to Neovim: ${error}`);
-    console.error(getSocketTroubleshootingGuidance(socketPath));
+    const isTimeout = isTimeoutError(error);
+    if (isTimeout) {
+      console.error(`Timed out connecting to Neovim (${options.timeout}ms). The Neovim process is probably not running or not listening on this socket.`);
+    } else {
+      console.error(`Failed to connect to Neovim: ${error}`);
+    }
+    console.error(getSocketTroubleshootingGuidance(socketPath, isTimeout));
     return false;
   }
 }
@@ -168,7 +173,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return {
           content: [{ 
             type: "text", 
-            text: `Error: Could not connect to Neovim at ${socketPath}. Make sure Neovim is running with '--listen ${socketPath}'.` 
+            text: `Error: Could not connect to Neovim at ${socketPath}.\n` + 
+                  `This is likely because:\n` +
+                  `1. Neovim is not running\n` +
+                  `2. Neovim was not started with the '--listen ${socketPath}' option\n` +
+                  `3. The connection timed out after 2 seconds\n\n` +
+                  `Please start Neovim with: nvim --listen ${socketPath}`
           }],
           isError: true
         } as ToolResponse;
@@ -344,8 +354,11 @@ async function runServer() {
     console.error("Neovim MCP Server running on stdio with active Neovim connection");
   } else {
     console.error("Neovim MCP Server running on stdio WITHOUT Neovim connection");
+    console.error(`Connection failed or timed out after 2 seconds`);
     console.error(`The server will retry connecting when tools are used`);
-    console.error(`Start Neovim with: nvim --listen ${socketPath}`);
+    console.error(`To fix this issue:`);
+    console.error(`1. Make sure Neovim is running`);
+    console.error(`2. Start Neovim with: nvim --listen ${socketPath}`);
   }
 }
 

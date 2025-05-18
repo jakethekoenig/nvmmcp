@@ -41,16 +41,34 @@ export async function checkSocketExists(socketPath: string): Promise<boolean> {
 }
 
 /**
+ * Check if an error is likely a timeout error
+ */
+export function isTimeoutError(error: any): boolean {
+  const errorMsg = String(error).toLowerCase();
+  return errorMsg.includes('timeout') || 
+         errorMsg.includes('timed out') || 
+         errorMsg.includes('econnrefused') || 
+         errorMsg.includes('connection refused');
+}
+
+/**
  * Provides user-friendly guidance for socket issues
  */
-export function getSocketTroubleshootingGuidance(socketPath: string): string {
+export function getSocketTroubleshootingGuidance(socketPath: string, isTimeout = false): string {
   const socketDir = path.dirname(socketPath);
   const socketDirExistsSync = existsSync(socketDir);
   
-  let guidance = `Socket not found at: ${socketPath}\n`;
+  let guidance = '';
   
-  if (!socketDirExistsSync) {
-    guidance += `Directory ${socketDir} does not exist. Create it or specify a different path.\n`;
+  if (isTimeout) {
+    guidance += `Connection timed out or refused. The Neovim RPC server is probably not running.\n`;
+    guidance += `Make sure Neovim is running and listening on the socket.\n`;
+  } else {
+    guidance += `Socket not found at: ${socketPath}\n`;
+    
+    if (!socketDirExistsSync) {
+      guidance += `Directory ${socketDir} does not exist. Create it or specify a different path.\n`;
+    }
   }
   
   guidance += `Start Neovim with: nvim --listen ${socketPath}\n`;
