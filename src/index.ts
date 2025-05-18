@@ -17,6 +17,21 @@ type ToolResponse = {
   isError?: boolean;
 };
 
+// Define types for editor buffer resource
+type BufferContent = {
+  windowNumber: number | string;
+  isCurrentWindow: boolean;
+  bufferNumber: number | string;
+  bufferName: string;
+  cursor: [number, number];
+  content: string;
+};
+
+type BuffersResource = {
+  windows: BufferContent[];
+  timestamp: string;
+};
+
 // Get the Neovim socket path from command line arguments
 let socketPath: string;
 try {
@@ -93,21 +108,15 @@ const server = new Server(
   {
     capabilities: {
       tools: {},
+      resources: {
+        types: ["buffers"],
+      },
     },
   }
 );
 
 // Define the tools available in this server
 const tools = [
-  {
-    name: "view_buffers",
-    description: "View the content of visible buffers with cursor position",
-    inputSchema: {
-      type: "object",
-      properties: {},
-      required: [],
-    },
-  },
   {
     name: "send_normal_mode",
     description: "Send keystrokes to Neovim in normal mode",
@@ -151,9 +160,143 @@ const CallToolRequestSchema = z.object({
   }),
 });
 
+// Schema for buffers resource creation
+const CreateResourceRequestSchema = z.object({
+  method: z.literal("resources/create"),
+  params: z.object({
+    type: z.string(),
+    data: z.any().optional(),
+  }),
+});
+
 // Handle tools/list request
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return { tools };
+});
+
+// Handle resources/create request
+server.setRequestHandler(CreateResourceRequestSchema, async (request) => {
+  try {
+    const { type, data } = request.params;
+    
+    if (type !== "buffers") {
+      throw new Error(`Unsupported resource type: ${type}`);
+    }
+    
+    // Ensure we're connected to Neovim
+    if (!isNeovimConnected()) {
+      const connected = await connectToNeovim();
+      if (!connected) {
+        throw new Error(`Could not connect to Neovim at ${socketPath}. Make sure Neovim is running with '--listen ${socketPath}'.`);
+      }
+    }
+    
+    // Get all windows
+    const windows = await nvim.windows;
+    const currentWindow = await nvim.window;
+    
+    let result: BufferContent[] = [];
+    
+    // Process each window
+    for (const window of windows) {
+      try {
+        const windowNumber = await window.number;
+        const isCurrentWindow = (await currentWindow.number) === windowNumber;
+        
+        // Get window's buffer
+        const buffer = await window.buffer;
+        
+        // Check if buffer is defined
+        if (!buffer) {
+          result.push({
+            windowNumber,
+            isCurrentWindow,
+            bufferNumber: "Unknown",
+            bufferName: "Buffer is undefined",
+            cursor: [0, 0],
+            content: "Error: Buffer object is undefined"
+          });
+          continue;
+        }
+        
+        // Get buffer info
+        const bufferName = await buffer.name;
+        const bufferNumber = await buffer.number;
+        
+        // Get cursor position
+        const cursor = await window.cursor;
+        
+        // Get buffer line count using buffer.length
+        const bufLen = await buffer.length;
+        const lineCount = parseInt(String(bufLen), 10);
+        
+        // Get the buffer content
+        let content = [];
+        try {
+          content = await buffer.getLines(0, lineCount, false);
+        } catch (getlinesError) {
+          try {
+            // Fall back to direct API call
+            const bufferId = await buffer.id;
+            const start = 0;
+            const end = Math.max(1, lineCount);
+            
+            content = await nvim.request('nvim_buf_get_lines', [
+              bufferId,
+              start,
+              end,
+              false
+            ]);
+          } catch (apiError) {
+            content = [`Error getting buffer content: ${apiError}`];
+          }
+        }
+        
+        // Format content with cursor marker
+        const contentWithCursor = content.map((line: string, idx: number) => {
+          if (isCurrentWindow && idx === cursor[0] - 1) {
+            // Insert cursor marker at the position
+            const beforeCursor = line.substring(0, cursor[1]);
+            const afterCursor = line.substring(cursor[1]);
+            return `${beforeCursor}|${afterCursor}`;
+          }
+          return line;
+        });
+        
+        // Add window info to result
+        result.push({
+          windowNumber,
+          isCurrentWindow,
+          bufferNumber,
+          bufferName: bufferName || "Unnamed",
+          cursor,
+          content: contentWithCursor.join('\n')
+        });
+      } catch (windowError) {
+        result.push({
+          windowNumber: "Error",
+          isCurrentWindow: false,
+          bufferNumber: "Error",
+          bufferName: "Error processing window",
+          cursor: [0, 0],
+          content: `Error processing window: ${windowError}`
+        });
+      }
+    }
+    
+    // Create the buffers resource
+    const buffersResource: BuffersResource = {
+      windows: result,
+      timestamp: new Date().toISOString(),
+    };
+    
+    return {
+      resource: buffersResource,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`Error creating buffers resource: ${errorMessage}`);
+  }
 });
 
 // Handle tools/call request
@@ -177,113 +320,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     // Handle different tools
     switch (name) {
-      case "view_buffers": {
-        // Get all windows
-        const windows = await nvim.windows;
-        const currentWindow = await nvim.window;
-        
-        let result = [];
-        
-        // Process each window
-        for (const window of windows) {
-          try {
-            const windowNumber = await window.number;
-            const isCurrentWindow = (await currentWindow.number) === windowNumber;
-            
-            // Get window's buffer
-            const buffer = await window.buffer;
-            
-            // Check if buffer is defined
-            if (!buffer) {
-              result.push({
-                windowNumber,
-                isCurrentWindow,
-                bufferNumber: "Unknown",
-                bufferName: "Buffer is undefined",
-                cursor: [0, 0],
-                content: "Error: Buffer object is undefined"
-              });
-              continue;
-            }
-            
-            // Get buffer info
-            const bufferName = await buffer.name;
-            const bufferNumber = await buffer.number;
-            
-            // Get cursor position
-            const cursor = await window.cursor;
-            
-            // Get buffer line count using buffer.length
-            const bufLen = await buffer.length;
-            const lineCount = parseInt(String(bufLen), 10);
-            
-            // Get the buffer content
-            let content = [];
-            try {
-              content = await buffer.getLines(0, lineCount, false);
-            } catch (getlinesError) {
-              try {
-                // Fall back to direct API call
-                const bufferId = await buffer.id;
-                const start = 0;
-                const end = Math.max(1, lineCount);
-                
-                content = await nvim.request('nvim_buf_get_lines', [
-                  bufferId,
-                  start,
-                  end,
-                  false
-                ]);
-              } catch (apiError) {
-                content = [`Error getting buffer content: ${apiError}`];
-              }
-            }
-            
-            // Format content with cursor marker
-            const contentWithCursor = content.map((line: string, idx: number) => {
-              if (isCurrentWindow && idx === cursor[0] - 1) {
-                // Insert cursor marker at the position
-                const beforeCursor = line.substring(0, cursor[1]);
-                const afterCursor = line.substring(cursor[1]);
-                return `${beforeCursor}|${afterCursor}`;
-              }
-              return line;
-            });
-            
-            // Add window info to result
-            result.push({
-              windowNumber,
-              isCurrentWindow,
-              bufferNumber,
-              bufferName: bufferName || "Unnamed",
-              cursor,
-              content: contentWithCursor.join('\n')
-            });
-          } catch (windowError) {
-            result.push({
-              windowNumber: "Error",
-              isCurrentWindow: false,
-              bufferNumber: "Error",
-              bufferName: "Error processing window",
-              cursor: [0, 0],
-              content: `Error processing window: ${windowError}`
-            });
-          }
-        }
-        
-        // Format the result as text
-        const formattedResult = result.map(window => {
-          return `Window ${window.windowNumber}${window.isCurrentWindow ? ' (current)' : ''} - Buffer ${window.bufferNumber} (${window.bufferName})
-Cursor at line ${window.cursor[0]}, column ${window.cursor[1]}
-Content:
-${window.content}
-${'='.repeat(80)}`;
-        }).join('\n\n');
-        
-        return {
-          content: [{ type: "text", text: formattedResult || "No visible buffers found" }]
-        } as ToolResponse;
-      }
       
       case "send_normal_mode": {
         const parsed = SendNormalModeArgsSchema.safeParse(args);
