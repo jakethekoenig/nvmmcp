@@ -256,7 +256,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             });
             
             // Add line numbers to content and format with cursor position info
-            const formattedContent = contentWithCursor.map((line, idx) => {
+            const formattedContent = contentWithCursor.map((line: string, idx: number) => {
               const lineNumber = startLine + idx + 1; // Convert to 1-based for display
               return `${lineNumber.toString().padStart(5, ' ')}: ${line}`;
             });
