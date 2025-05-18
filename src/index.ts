@@ -342,10 +342,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 'Timeout checking if buffer is loaded'
               );
               
+              // Check if buffer is modified (has unsaved changes)
+              const isModified = await withTimeout(
+                nvim.request('nvim_buf_get_option', [buffer.id, 'modified']),
+                NVIM_RPC_TIMEOUT_MS,
+                'Timeout checking if buffer is modified'
+              );
+              
               allBuffersInfo.push({
                 number: bufferNumber,
                 name: bufferName || 'Unnamed',
-                isLoaded
+                isLoaded,
+                isModified
               });
             } catch (bufferError) {
               allBuffersInfo.push({
@@ -399,10 +407,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     'Timeout getting buffer name'
                   );
                   
+                  // Check if buffer is modified (has unsaved changes)
+                  const isModified = await withTimeout(
+                    nvim.request('nvim_buf_get_option', [buffer.id, 'modified']),
+                    NVIM_RPC_TIMEOUT_MS,
+                    'Timeout checking if buffer is modified'
+                  );
+                  
                   windowsInfo.push({
                     number: windowNumber,
                     bufferNumber,
-                    bufferName: bufferName || 'Unnamed'
+                    bufferName: bufferName || 'Unnamed',
+                    isModified
                   });
                 } catch (windowError) {
                   windowsInfo.push({
@@ -475,6 +491,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 buffer.number,
                 NVIM_RPC_TIMEOUT_MS,
                 'Timeout getting buffer number'
+              );
+              
+              // Check if buffer is modified (has unsaved changes)
+              const isModified = await withTimeout(
+                nvim.request('nvim_buf_get_option', [buffer.id, 'modified']),
+                NVIM_RPC_TIMEOUT_MS,
+                'Timeout checking if buffer is modified'
               );
               
               // Get cursor position
@@ -590,6 +613,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 isActiveBuffer: isCurrentWindow, // The buffer in the current window is the active one
                 bufferNumber,
                 bufferName: bufferName || "Unnamed",
+                isModified,
                 cursor,
                 totalLines: lineCount,
                 visibleRange: {
@@ -619,9 +643,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               return `${tabHeader}\nError: ${tab.error}`;
             }
             
-            const windowsInfo = tab.windows.map(win => 
-              `  Window ${win.number}: Buffer ${win.bufferNumber} (${win.bufferName})`
-            ).join('\n');
+            const windowsInfo = tab.windows.map(win => {
+              // Add [+] indicator for modified buffers
+              const modifiedIndicator = win.isModified ? ' [+]' : '';
+              return `  Window ${win.number}: Buffer ${win.bufferNumber} (${win.bufferName}${modifiedIndicator})`;
+            }).join('\n');
             
             return `${tabHeader}\n${windowsInfo || '  No windows'}`;
           }).join('\n\n');
@@ -633,9 +659,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             return numA - numB;
           });
           
-          const allBuffersSummary = allBuffersInfo.map(buf => 
-            `Buffer ${buf.number}: ${buf.name}${buf.isLoaded ? '' : ' (not loaded)'}`
-          ).join('\n');
+          const allBuffersSummary = allBuffersInfo.map(buf => {
+            // Add [+] indicator for modified buffers
+            const modifiedIndicator = buf.isModified ? ' [+]' : '';
+            return `Buffer ${buf.number}: ${buf.name}${modifiedIndicator}${buf.isLoaded ? '' : ' (not loaded)'}`;
+          }).join('\n');
           
           // Format the visible buffers (in current tab) as text with visible range information
           const visibleBuffersContent = result.map(window => {
@@ -665,8 +693,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               windowHeader += ` - Buffer ${window.bufferNumber}`;
             }
             
-            // Add buffer name and active indicator
-            windowHeader += ` (${bufferNameText})${activeBufferIndicator}`;
+            // Add buffer name, modified indicator, and active indicator
+            const modifiedIndicator = window.isModified ? ' [+]' : '';
+            windowHeader += ` (${bufferNameText}${modifiedIndicator})${activeBufferIndicator}`;
               
             return `${windowHeader}
 Cursor at line ${cursorLine}, column ${cursorColumn} (marked with 🔸)
