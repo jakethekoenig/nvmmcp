@@ -30,4 +30,4 @@ jobs:
       run: npm run build
       
     - name: Run test script
-      run: ./test-nvmmcp.sh
+      run: ./bin/test-nvmmcp.sh
