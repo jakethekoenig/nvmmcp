@@ -7,6 +7,9 @@ import { z } from "zod";
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
+// Socket utilities
+import { normalizeSocketPath, checkSocketExists, getSocketTroubleshootingGuidance } from './socket-utils.js';
+
 // Define types for working with the MCP SDK
 type NeovimClient = any;
 type ToolResponse = {
@@ -15,9 +18,19 @@ type ToolResponse = {
 };
 
 // Get the Neovim socket path from command line arguments
-const socketPath = process.argv[2];
-if (!socketPath) {
-  console.error("Error: Socket path argument is required");
+let socketPath: string;
+try {
+  // Get and normalize the socket path
+  const rawSocketPath = process.argv[2];
+  if (!rawSocketPath) {
+    console.error("Error: Socket path argument is required");
+    console.error("Usage: npx nvmmcp /path/to/nvim/socket");
+    process.exit(1);
+  }
+  
+  socketPath = normalizeSocketPath(rawSocketPath);
+} catch (error) {
+  console.error(`Error processing socket path: ${error}`);
   console.error("Usage: npx nvmmcp /path/to/nvim/socket");
   process.exit(1);
 }
@@ -25,15 +38,37 @@ if (!socketPath) {
 // Connect to Neovim via socket
 let nvim: NeovimClient;
 
-// Function to connect to Neovim
+// Check if Neovim connection is ready and connected
+function isNeovimConnected(): boolean {
+  return nvim !== undefined && nvim !== null;
+}
+
+// Function to connect to Neovim with better error handling
 async function connectToNeovim(): Promise<boolean> {
+  console.error(`Connecting to Neovim via socket: ${socketPath}`);
+  
+  // Check if socket exists before attempting connection
+  const socketExists = await checkSocketExists(socketPath);
+  if (!socketExists) {
+    console.error(`Error: Socket file not found at ${socketPath}`);
+    console.error(getSocketTroubleshootingGuidance(socketPath));
+    return false;
+  }
+  
   try {
-    console.error(`Connecting to Neovim via socket: ${socketPath}`);
-    nvim = await attach({ socket: socketPath });
+    // Connection options with timeout to prevent hanging indefinitely
+    const options = { 
+      socket: socketPath,
+      // Set timeout to 5 seconds (in milliseconds)
+      timeout: 5000
+    };
+    
+    nvim = await attach(options);
     console.error("Successfully connected to Neovim");
     return true;
   } catch (error) {
     console.error(`Failed to connect to Neovim: ${error}`);
+    console.error(getSocketTroubleshootingGuidance(socketPath));
     return false;
   }
 }
@@ -118,7 +153,6 @@ const CallToolRequestSchema = z.object({
 
 // Handle tools/list request
 server.setRequestHandler(ListToolsRequestSchema, async () => {
-  console.error("Received tools/list request");
   return { tools };
 });
 
@@ -126,16 +160,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     const { name, arguments: args } = request.params;
-    console.error(`Tool call: ${name} with args:`, args);
-
+    
     // Ensure we're connected to Neovim
-    if (!nvim) {
+    if (!isNeovimConnected()) {
       const connected = await connectToNeovim();
       if (!connected) {
         return {
           content: [{ 
             type: "text", 
-            text: `Error: Failed to connect to Neovim via socket: ${socketPath}` 
+            text: `Error: Could not connect to Neovim at ${socketPath}. Make sure Neovim is running with '--listen ${socketPath}'.` 
           }],
           isError: true
         } as ToolResponse;
@@ -152,64 +185,67 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         let result = [];
         
         // Process each window
-        for (let i = 0; i < windows.length; i++) {
-          const window = windows[i];
-          const windowNumber = await window.number;
-          const isCurrentWindow = (await currentWindow.number) === windowNumber;
-          
-          // Initialize variables outside try block for scope
-          let buffer: any;
-          let bufferName = "Unknown";
-          let bufferNumber = "Unknown";
-          let cursor = [1, 0]; // Default to line 1, column 0
-          
+        for (const window of windows) {
           try {
+            const windowNumber = await window.number;
+            const isCurrentWindow = (await currentWindow.number) === windowNumber;
+            
             // Get window's buffer
-            buffer = await window.buffer;
-            console.error(`Got buffer for window ${windowNumber}`);
+            const buffer = await window.buffer;
             
-            // Get buffer info with error handling
-            try {
-              bufferName = await buffer.name || "Unnamed"; 
-            } catch (error) {
-              console.error(`Error getting buffer name: ${error}`);
+            // Check if buffer is defined
+            if (!buffer) {
+              result.push({
+                windowNumber,
+                isCurrentWindow,
+                bufferNumber: "Unknown",
+                bufferName: "Buffer is undefined",
+                cursor: [0, 0],
+                content: "Error: Buffer object is undefined"
+              });
+              continue;
             }
             
-            // Get buffer number with fallback
-            try {
-              bufferNumber = await buffer.number;
-              console.error(`Got buffer number: ${bufferNumber}`);
-            } catch (error) {
-              console.error(`Error getting buffer number: ${error}`);
-            }
+            // Get buffer info
+            const bufferName = await buffer.name;
+            const bufferNumber = await buffer.number;
             
-            // Get cursor position with fallback
-            try {
-              cursor = await window.cursor;
-            } catch (error) {
-              console.error(`Error getting cursor: ${error}`);
-            }
+            // Get cursor position
+            const cursor = await window.cursor;
             
-            // Get buffer lines
-            const start = 0;
-            const end = -1; // Special value in Neovim meaning "until the end of the buffer"
-            console.error(`Getting lines for buffer ${bufferNumber || "Unknown"} from ${start} to ${end} (all lines)`);
+            // Get buffer line count using buffer.length
+            const bufLen = await buffer.length;
+            const lineCount = parseInt(String(bufLen), 10);
             
             // Get the buffer content
-            const content = await buffer.getLines(start, end, false);
+            let content = [];
+            try {
+              content = await buffer.getLines(0, lineCount, false);
+            } catch (getlinesError) {
+              try {
+                // Fall back to direct API call
+                const bufferId = await buffer.id;
+                const start = 0;
+                const end = Math.max(1, lineCount);
+                
+                content = await nvim.request('nvim_buf_get_lines', [
+                  bufferId,
+                  start,
+                  end,
+                  false
+                ]);
+              } catch (apiError) {
+                content = [`Error getting buffer content: ${apiError}`];
+              }
+            }
             
             // Format content with cursor marker
             const contentWithCursor = content.map((line: string, idx: number) => {
               if (isCurrentWindow && idx === cursor[0] - 1) {
                 // Insert cursor marker at the position
-                try {
-                  const beforeCursor = line.substring(0, cursor[1]);
-                  const afterCursor = line.substring(cursor[1]);
-                  return `${beforeCursor}|${afterCursor}`;
-                } catch (error) {
-                  console.error(`Error adding cursor marker: ${error}`);
-                  return line + " |"; // Add cursor at the end as fallback
-                }
+                const beforeCursor = line.substring(0, cursor[1]);
+                const afterCursor = line.substring(cursor[1]);
+                return `${beforeCursor}|${afterCursor}`;
               }
               return line;
             });
@@ -219,29 +255,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               windowNumber,
               isCurrentWindow,
               bufferNumber,
-              bufferName,
+              bufferName: bufferName || "Unnamed",
               cursor,
               content: contentWithCursor.join('\n')
             });
-          } catch (error) {
-            // Handle any errors with buffer operations
-            console.error(`Error processing buffer: ${error}`);
-            
-            // Add error information to the result
+          } catch (windowError) {
             result.push({
-              windowNumber: windowNumber || "Unknown",
-              isCurrentWindow,
+              windowNumber: "Error",
+              isCurrentWindow: false,
               bufferNumber: "Error",
-              bufferName: "Error", // Use a string literal instead of potentially undefined variable
+              bufferName: "Error processing window",
               cursor: [0, 0],
-              content: `Error retrieving buffer content: ${error}`
+              content: `Error processing window: ${windowError}`
             });
           }
         }
         
         // Format the result as text
         const formattedResult = result.map(window => {
-          return `Window ${window.windowNumber}${window.isCurrentWindow ? ' (current)' : ''} - Buffer ${window.bufferNumber} (${window.bufferName || 'Unnamed'})
+          return `Window ${window.windowNumber}${window.isCurrentWindow ? ' (current)' : ''} - Buffer ${window.bufferNumber} (${window.bufferName})
 Cursor at line ${window.cursor[0]}, column ${window.cursor[1]}
 Content:
 ${window.content}
@@ -292,7 +324,6 @@ ${'='.repeat(80)}`;
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`Error in tool call:`, errorMessage);
     return {
       content: [{ type: "text", text: `Error: ${errorMessage}` }],
       isError: true,
@@ -302,15 +333,20 @@ ${'='.repeat(80)}`;
 
 // Start server
 async function runServer() {
-  // Connect to Neovim
-  await connectToNeovim();
+  // Try to connect to Neovim, but continue even if it fails
+  const connected = await connectToNeovim();
   
-  // Start MCP server
+  // Start MCP server regardless of Neovim connection status
   const transport = new StdioServerTransport();
   await server.connect(transport);
   
-  console.error("Neovim MCP Server running on stdio");
-  console.error(`Connected to Neovim socket: ${socketPath}`);
+  if (connected) {
+    console.error("Neovim MCP Server running on stdio with active Neovim connection");
+  } else {
+    console.error("Neovim MCP Server running on stdio WITHOUT Neovim connection");
+    console.error(`The server will retry connecting when tools are used`);
+    console.error(`Start Neovim with: nvim --listen ${socketPath}`);
+  }
 }
 
 runServer().catch((error) => {
