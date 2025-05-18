@@ -10,6 +10,92 @@ import * as path from 'path';
 // Socket utilities
 import { normalizeSocketPath, checkSocketExists, getSocketTroubleshootingGuidance, isTimeoutError } from './socket-utils.js';
 
+/**
+ * Interface for window information with position data
+ */
+interface WindowInfo {
+  number: number | string;
+  bufferNumber?: number | string;
+  bufferName?: string;
+  isModified?: boolean;
+  position?: {
+    row: number;
+    col: number;
+    width: number;
+    height: number;
+  };
+}
+
+/**
+ * Interface for the layout information return type
+ */
+interface LayoutInfo {
+  type: string;
+  description: string;
+}
+
+/**
+ * Determines the window layout (vertical or horizontal splits) based on window positions
+ * @param windows Array of window information objects with position data
+ * @returns Object with layout type and description
+ */
+function determineWindowLayout(windows: WindowInfo[]): LayoutInfo {
+  if (!windows || windows.length <= 1) {
+    return { type: 'single', description: 'Single window' };
+  }
+  
+  // Filter windows that have position data
+  const windowsWithPosition = windows.filter(w => w.position != null);
+  
+  // If we don't have enough windows with position data, return a default layout
+  if (windowsWithPosition.length <= 1) {
+    return {
+      type: windowsWithPosition.length === 1 ? 'single' : 'unknown',
+      description: windowsWithPosition.length === 1 ? 'Single window' : 'Unknown layout'
+    };
+  }
+  
+  // Sort windows by position (row, col)
+  const sortedWindows = [...windowsWithPosition].sort((a, b) => {
+    // Sort by row first, then by column
+    if (a.position!.row !== b.position!.row) {
+      return a.position!.row - b.position!.row;
+    }
+    return a.position!.col - b.position!.col;
+  });
+  
+  // Count how many unique row and column positions we have
+  const uniqueRows = new Set(sortedWindows.map(w => w.position!.row)).size;
+  const uniqueCols = new Set(sortedWindows.map(w => w.position!.col)).size;
+  
+  // Determine primary layout direction
+  if (uniqueRows === 1 && uniqueCols > 1) {
+    // All windows in same row = horizontal splits only
+    return { 
+      type: 'horizontal', 
+      description: `${windows.length} windows with horizontal splits (side by side)` 
+    };
+  } else if (uniqueRows > 1 && uniqueCols === 1) {
+    // All windows in same column = vertical splits only
+    return { 
+      type: 'vertical', 
+      description: `${windows.length} windows with vertical splits (stacked)` 
+    };
+  } else if (uniqueRows > 1 && uniqueCols > 1) {
+    // Mix of vertical and horizontal splits
+    return { 
+      type: 'mixed', 
+      description: `${windows.length} windows with mixed layout (vertical and horizontal splits)` 
+    };
+  }
+  
+  // Fallback
+  return { 
+    type: 'complex', 
+    description: `${windows.length} windows with complex layout` 
+  };
+}
+
 // Import from neovim package but use 'any' type for flexibility
 // The actual neovim types are complex and can cause TS errors
 
@@ -372,7 +458,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 'Timeout getting tab windows'
               );
               
-              let windowsInfo = [];
+              let windowsInfo: WindowInfo[] = [];
               for (const win of tabWindows) {
                 try {
                   const windowNumber = await withTimeout(
@@ -399,24 +485,84 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     'Timeout getting buffer name'
                   );
                   
+                  // Check if buffer is modified (has unsaved changes)
+                  const isModified = await withTimeout(
+                    nvim.request('nvim_buf_get_option', [buffer.id, 'modified']),
+                    NVIM_RPC_TIMEOUT_MS,
+                    'Timeout checking if buffer is modified'
+                  );
+                  
+                  // Get window position and dimensions
+                  const winPosition = await withTimeout(
+                    nvim.request('nvim_win_get_position', [win.id]),
+                    NVIM_RPC_TIMEOUT_MS,
+                    'Timeout getting window position'
+                  );
+                  
+                  const winWidth = await withTimeout(
+                    nvim.request('nvim_win_get_width', [win.id]),
+                    NVIM_RPC_TIMEOUT_MS,
+                    'Timeout getting window width'
+                  );
+                  
+                  const winHeight = await withTimeout(
+                    nvim.request('nvim_win_get_height', [win.id]),
+                    NVIM_RPC_TIMEOUT_MS,
+                    'Timeout getting window height'
+                  );
+                  
                   windowsInfo.push({
                     number: windowNumber,
                     bufferNumber,
-                    bufferName: bufferName || 'Unnamed'
+                    bufferName: bufferName || 'Unnamed',
+                    isModified,
+                    position: {
+                      row: winPosition[0],
+                      col: winPosition[1],
+                      width: winWidth,
+                      height: winHeight
+                    }
                   });
                 } catch (windowError) {
                   windowsInfo.push({
                     number: "Error",
                     bufferNumber: "Error",
-                    bufferName: "Error retrieving window info"
+                    bufferName: "Error retrieving window info",
+                    position: {
+                      row: 0,
+                      col: 0,
+                      width: 0,
+                      height: 0
+                    }
                   });
                 }
+              }
+              
+              // Determine the window layout based on window positions
+              let layoutType = 'unknown';
+              let layoutDescription = '';
+              
+              if (windowsInfo.length > 1) {
+                // Check if windows are primarily arranged horizontally or vertically
+                const layoutInfo = determineWindowLayout(windowsInfo);
+                layoutType = layoutInfo.type;
+                layoutDescription = layoutInfo.description;
+              } else if (windowsInfo.length === 1) {
+                layoutType = 'single';
+                layoutDescription = 'Single window';
+              } else {
+                layoutType = 'empty';
+                layoutDescription = 'No windows';
               }
               
               tabsInfo.push({
                 number: tabNumber,
                 isCurrent: tabNumber === currentTabNumber,
-                windows: windowsInfo
+                windows: windowsInfo,
+                layout: {
+                  type: layoutType,
+                  description: layoutDescription
+                }
               });
             } catch (tabError) {
               tabsInfo.push({
@@ -619,11 +765,39 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               return `${tabHeader}\nError: ${tab.error}`;
             }
             
-            const windowsInfo = tab.windows.map(win => 
-              `  Window ${win.number}: Buffer ${win.bufferNumber} (${win.bufferName})`
-            ).join('\n');
+            // Add layout information if available
+            let layoutInfo = '';
+            if (tab.layout && tab.layout.type !== 'unknown') {
+              // Create a simple visual representation of the layout
+              let layoutSymbol = '';
+              
+              switch (tab.layout.type) {
+                case 'horizontal':
+                  layoutSymbol = '║║'; // Horizontal splits (side by side)
+                  break;
+                case 'vertical':
+                  layoutSymbol = '═══'; // Vertical splits (stacked)
+                  break;
+                case 'mixed':
+                  layoutSymbol = '╬'; // Mixed layout
+                  break;
+                case 'single':
+                  layoutSymbol = '□'; // Single window
+                  break;
+                default:
+                  layoutSymbol = '?'; // Unknown
+              }
+              
+              layoutInfo = `  Layout: ${layoutSymbol} ${tab.layout.description}\n`;
+            }
             
-            return `${tabHeader}\n${windowsInfo || '  No windows'}`;
+            const windowsInfo = tab.windows.map(win => {
+              // Add [+] indicator for modified buffers
+              const modifiedIndicator = win.isModified ? ' [+]' : '';
+              return `  Window ${win.number}: Buffer ${win.bufferNumber} (${win.bufferName}${modifiedIndicator})`;
+            }).join('\n');
+            
+            return `${tabHeader}\n${layoutInfo}${windowsInfo || '  No windows'}`;
           }).join('\n\n');
           
           // Format all buffers summary
