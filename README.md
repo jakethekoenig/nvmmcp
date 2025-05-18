@@ -4,11 +4,14 @@ A Model Context Protocol (MCP) server that communicates with a local Neovim sess
 
 ## Features
 
-This MCP server provides three main tools for AI model interaction with Neovim:
+This MCP server provides tools and resources for AI model interaction with Neovim:
 
-1. **View Buffers**: See the content of visible buffers with cursor position rendered
-2. **Send Normal Mode Commands**: Execute normal mode keystrokes in Neovim
-3. **Send Command Mode Commands**: Execute command mode commands and get their output
+### Tools
+1. **Send Normal Mode Commands**: Execute normal mode keystrokes in Neovim
+2. **Send Command Mode Commands**: Execute command mode commands and get their output
+
+### Resources
+1. **Buffers Resource**: Access the content of visible buffers with cursor position rendered
 
 ## Installation
 
@@ -51,13 +54,16 @@ Add this server to your MCP configuration:
 }
 ```
 
-### 3. Use the tools
+### 3. Use the tools and resources
 
 The following tools are available to the AI:
 
-- `view_buffers`: Shows the content of visible buffers with cursor position
 - `send_normal_mode`: Sends keystrokes to Neovim in normal mode
 - `send_command_mode`: Executes a command in Neovim's command mode and gets the output
+
+The following resources are available to the AI:
+
+- `neovim-buffer://current`: Accesses the content of visible Neovim buffers with cursor positions
 
 ## Development
 
@@ -132,6 +138,30 @@ The integration test validates that:
 - Normal mode commands can be sent and executed
 - Command mode commands can be sent and executed
 - File operations work correctly
+
+## Resource Usage Examples
+
+### Buffers Resource
+
+The `buffers` resource allows AI models to access the current editor state with cursor positions and visible content:
+
+```json
+{
+  "method": "resources/read",
+  "params": {
+    "uri": "neovim-buffer://current"
+  }
+}
+```
+
+This returns a structured JSON resource containing:
+- All visible windows and buffers
+- Cursor positions (marked with 🔸 in content)
+- Active buffer indication
+- Line numbers in content
+- Visible range information
+
+The resource will also send notifications via `resources/changed` whenever buffer contents change, cursor moves, or buffer state changes, allowing clients to keep their view of the editor up to date.
 
 ## License
 
