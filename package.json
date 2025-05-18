@@ -1,5 +1,5 @@
 {
-  "name": "nvmmcp",
+  "name": "@abanteai/nvmmcp",
   "version": "0.1.0",
   "description": "Neovim MCP server for communicating with Neovim via RPC",
   "main": "dist/index.js",
@@ -18,15 +18,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jakethekoenig/nvmmcp.git"
+    "url": "git+https://github.com/abanteai/nvmmcp.git"
   },
   "keywords": ["neovim", "mcp", "rpc", "ai", "claude", "assistant"],
-  "author": "jakethekoenig",
+  "author": "abanteai",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/jakethekoenig/nvmmcp/issues"
+    "url": "https://github.com/abanteai/nvmmcp/issues"
   },
-  "homepage": "https://github.com/jakethekoenig/nvmmcp#readme",
+  "homepage": "https://github.com/abanteai/nvmmcp#readme",
   "engines": {
     "node": ">=18.0.0"
   },
