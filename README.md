@@ -64,7 +64,7 @@ The following tools are available to the AI:
 To build from source:
 
 ```bash
-git clone https://github.com/abanteai/nvmmcp.git
+git clone https://github.com/jakethekoenig/nvmmcp.git
 cd nvmmcp
 npm install
 npm run build
