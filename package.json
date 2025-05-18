@@ -18,15 +18,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/abanteai/nvmmcp.git"
+    "url": "git+https://github.com/jakethekoenig/nvmmcp.git"
   },
   "keywords": ["neovim", "mcp", "rpc", "ai", "claude", "assistant"],
   "author": "abanteai",
-  "license": "ISC",
+  "license": "MIT",
   "bugs": {
-    "url": "https://github.com/abanteai/nvmmcp/issues"
+    "url": "https://github.com/jakethekoenig/nvmmcp/issues"
   },
-  "homepage": "https://github.com/abanteai/nvmmcp#readme",
+  "homepage": "https://github.com/jakethekoenig/nvmmcp#readme",
   "engines": {
     "node": ">=18.0.0"
   },
