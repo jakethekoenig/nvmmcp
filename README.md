@@ -10,18 +10,6 @@ This MCP server provides three main tools for AI model interaction with Neovim:
 2. **Send Normal Mode Commands**: Execute normal mode keystrokes in Neovim
 3. **Send Command Mode Commands**: Execute command mode commands and get their output
 
-## Installation
-
-```bash
-npm install -g @abanteai/nvmmcp
-```
-
-Or use without installing:
-
-```bash
-npx @abanteai/nvmmcp /path/to/socket
-```
-
 ## Usage
 
 ### 1. Start Neovim with a socket
