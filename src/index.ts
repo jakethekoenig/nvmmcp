@@ -42,6 +42,21 @@ interface BufferResource {
   uri: string;
   name: string;
   windows: BufferInfo[];
+  allBuffers: {
+    number: number | string;
+    name: string;
+    isLoaded: boolean;
+  }[];
+  tabs: {
+    number: number;
+    isCurrent: boolean;
+    error?: string;
+    windows: {
+      number: number;
+      bufferNumber: number | string;
+      bufferName: string;
+    }[];
+  }[];
   timestamp: string;
 }
 
@@ -184,7 +199,16 @@ const server = new McpServer({
 });
 
 // Define a function to process and format buffer content
-async function getBufferContents(): Promise<BufferInfo[]> {
+async function getBufferContents(): Promise<{ 
+  buffers: BufferInfo[]; 
+  allBuffers: { number: number | string; name: string; isLoaded: boolean; }[];
+  tabs: { 
+    number: number; 
+    isCurrent: boolean; 
+    error?: string;
+    windows: { number: number; bufferNumber: number | string; bufferName: string; }[]; 
+  }[];
+}> {
   // Ensure we're connected to Neovim and the connection is alive
   if (!isNeovimConnected()) {
     // Try to establish a new connection
@@ -207,6 +231,142 @@ async function getBufferContents(): Promise<BufferInfo[]> {
       'Timeout getting current Neovim window'
     );
     
+    // Get tabs info
+    const tabs = await withTimeout(
+      nvim.tabpages,
+      NVIM_RPC_TIMEOUT_MS,
+      'Timeout getting Neovim tabpages'
+    );
+    
+    const currentTab = await withTimeout(
+      nvim.tabpage,
+      NVIM_RPC_TIMEOUT_MS,
+      'Timeout getting current tabpage'
+    );
+    
+    // Get list of all buffers
+    const buffersList = await withTimeout(
+      nvim.buffers,
+      NVIM_RPC_TIMEOUT_MS,
+      'Timeout getting buffer list'
+    );
+    
+    // Process all buffers
+    const allBuffersInfo = [];
+    for (const buffer of buffersList) {
+      try {
+        const bufNumber = await withTimeout(
+          buffer.number,
+          NVIM_RPC_TIMEOUT_MS,
+          'Timeout getting buffer number'
+        );
+        
+        const bufName = await withTimeout(
+          buffer.name,
+          NVIM_RPC_TIMEOUT_MS,
+          'Timeout getting buffer name'
+        );
+        
+        const isLoaded = await withTimeout(
+          buffer.isLoaded(),
+          NVIM_RPC_TIMEOUT_MS,
+          'Timeout checking if buffer is loaded'
+        );
+        
+        allBuffersInfo.push({
+          number: bufNumber,
+          name: bufName || '[No Name]',
+          isLoaded
+        });
+      } catch (bufferError) {
+        allBuffersInfo.push({
+          number: 'Error',
+          name: `Error getting buffer info: ${bufferError}`,
+          isLoaded: false
+        });
+      }
+    }
+    
+    // Process tabs
+    const tabsInfo = [];
+    for (const tab of tabs) {
+      try {
+        const tabNumber = await withTimeout(
+          tab.number,
+          NVIM_RPC_TIMEOUT_MS,
+          'Timeout getting tab number'
+        );
+        
+        const isCurrentTab = (await withTimeout(
+          currentTab.number,
+          NVIM_RPC_TIMEOUT_MS,
+          'Timeout getting current tab number'
+        )) === tabNumber;
+        
+        // Get windows in this tab
+        const tabWindows = await withTimeout(
+          tab.windows,
+          NVIM_RPC_TIMEOUT_MS,
+          'Timeout getting windows for tab'
+        );
+        
+        const windowsInfo = [];
+        for (const win of tabWindows) {
+          try {
+            const winNumber = await withTimeout(
+              win.number,
+              NVIM_RPC_TIMEOUT_MS,
+              'Timeout getting window number in tab'
+            );
+            
+            const winBuffer = await withTimeout(
+              win.buffer,
+              NVIM_RPC_TIMEOUT_MS,
+              'Timeout getting buffer for window in tab'
+            );
+            
+            const bufNumber = await withTimeout(
+              winBuffer.number,
+              NVIM_RPC_TIMEOUT_MS,
+              'Timeout getting buffer number for window in tab'
+            );
+            
+            const bufName = await withTimeout(
+              winBuffer.name,
+              NVIM_RPC_TIMEOUT_MS,
+              'Timeout getting buffer name for window in tab'
+            );
+            
+            windowsInfo.push({
+              number: winNumber,
+              bufferNumber: bufNumber,
+              bufferName: bufName || '[No Name]'
+            });
+          } catch (winError) {
+            windowsInfo.push({
+              number: 'Error',
+              bufferNumber: 'Error',
+              bufferName: `Error processing window: ${winError}`
+            });
+          }
+        }
+        
+        tabsInfo.push({
+          number: tabNumber,
+          isCurrent: isCurrentTab,
+          windows: windowsInfo
+        });
+      } catch (tabError) {
+        tabsInfo.push({
+          number: 'Error',
+          isCurrent: false,
+          error: `Error processing tab: ${tabError}`,
+          windows: []
+        });
+      }
+    }
+    
+    // Process visible buffers in current windows (as before)
     let result: BufferInfo[] = [];
     
     // Process each window
@@ -369,7 +529,11 @@ async function getBufferContents(): Promise<BufferInfo[]> {
       }
     }
     
-    return result;
+    return {
+      buffers: result,
+      allBuffers: allBuffersInfo,
+      tabs: tabsInfo
+    };
   } catch (error) {
     const err = error as ErrorWithMessage;
     if (err.message && err.message.includes('Timeout')) {
@@ -385,44 +549,85 @@ async function getBufferContents(): Promise<BufferInfo[]> {
 }
 
 // Format buffer content for display
-function formatBufferContent(bufferInfo: BufferInfo): string {
-  // Handle potential undefined values with defaults
-  const windowNumberText = bufferInfo.windowNumber !== undefined ? bufferInfo.windowNumber : 'N/A';
-  const bufferNameText = bufferInfo.bufferName || 'Unnamed';
-  const cursorLine = bufferInfo.cursor?.[0] !== undefined ? bufferInfo.cursor[0] : 'N/A';
-  const cursorColumn = bufferInfo.cursor?.[1] !== undefined ? bufferInfo.cursor[1] : 'N/A';
+function formatBufferContent(resource: BufferResource): string {
+  // Format tab summary
+  const tabSummary = resource.tabs.map(tab => {
+    const tabHeader = `Tab ${tab.number}${tab.isCurrent ? ' (current)' : ''}`;
+    
+    if (tab.error) {
+      return `${tabHeader}\nError: ${tab.error}`;
+    }
+    
+    const windowsInfo = tab.windows.map(win => 
+      `  Window ${win.number}: Buffer ${win.bufferNumber} (${win.bufferName})`
+    ).join('\n');
+    
+    return `${tabHeader}\n${windowsInfo || '  No windows'}`;
+  }).join('\n\n');
   
-  // Ensure content is a string array and is properly joined
-  const contentText = Array.isArray(bufferInfo.content) && bufferInfo.content.length > 0 
-    ? bufferInfo.content.join('\n') 
-    : "No content available";
+  // Format all buffers summary
+  const allBuffersSummary = resource.allBuffers
+    .sort((a, b) => {
+      const numA = typeof a.number === 'number' ? a.number : -1;
+      const numB = typeof b.number === 'number' ? b.number : -1;
+      return numA - numB;
+    })
+    .map(buf => 
+      `Buffer ${buf.number}: ${buf.name}${buf.isLoaded ? '' : ' (not loaded)'}`
+    ).join('\n');
   
-  const visibilityInfo = bufferInfo.visibleRange 
-    ? `Showing lines ${bufferInfo.visibleRange.startLine}-${bufferInfo.visibleRange.endLine} of ${bufferInfo.totalLines} total lines (±${bufferInfo.visibleRange.context} lines around cursor)`
-    : 'Full content';
-  
-  // Create a prominent indicator for the active buffer
-  const activeBufferIndicator = bufferInfo.isActiveBuffer 
-    ? ' 🟢 [ACTIVE BUFFER - Commands in normal mode will affect this buffer]' 
-    : '';
+  // Format the visible buffers (in current tab)
+  const visibleBuffersContent = resource.windows.map(bufferInfo => {
+    // Handle potential undefined values with defaults
+    const windowNumberText = bufferInfo.windowNumber !== undefined ? bufferInfo.windowNumber : 'N/A';
+    const bufferNameText = bufferInfo.bufferName || 'Unnamed';
+    const cursorLine = bufferInfo.cursor?.[0] !== undefined ? bufferInfo.cursor[0] : 'N/A';
+    const cursorColumn = bufferInfo.cursor?.[1] !== undefined ? bufferInfo.cursor[1] : 'N/A';
     
-  // Construct window header with conditional buffer number
-  let windowHeader = `Window ${windowNumberText}${bufferInfo.isCurrentWindow ? ' (current)' : ''}`;
+    // Ensure content is a string array and is properly joined
+    const contentText = Array.isArray(bufferInfo.content) && bufferInfo.content.length > 0 
+      ? bufferInfo.content.join('\n') 
+      : "No content available";
     
-  // Only add buffer number if it's defined
-  if (bufferInfo.bufferNumber !== undefined) {
-    windowHeader += ` - Buffer ${bufferInfo.bufferNumber}`;
-  }
+    const visibilityInfo = bufferInfo.visibleRange 
+      ? `Showing lines ${bufferInfo.visibleRange.startLine}-${bufferInfo.visibleRange.endLine} of ${bufferInfo.totalLines} total lines (±${bufferInfo.visibleRange.context} lines around cursor)`
+      : 'Full content';
     
-  // Add buffer name and active indicator
-  windowHeader += ` (${bufferNameText})${activeBufferIndicator}`;
-    
-  return `${windowHeader}
+    // Create a prominent indicator for the active buffer
+    const activeBufferIndicator = bufferInfo.isActiveBuffer 
+      ? ' 🟢 [ACTIVE BUFFER - Commands in normal mode will affect this buffer]' 
+      : '';
+      
+    // Construct window header with conditional buffer number
+    let windowHeader = `Window ${windowNumberText}${bufferInfo.isCurrentWindow ? ' (current)' : ''}`;
+      
+    // Only add buffer number if it's defined
+    if (bufferInfo.bufferNumber !== undefined) {
+      windowHeader += ` - Buffer ${bufferInfo.bufferNumber}`;
+    }
+      
+    // Add buffer name and active indicator
+    windowHeader += ` (${bufferNameText})${activeBufferIndicator}`;
+      
+    return `${windowHeader}
 Cursor at line ${cursorLine}, column ${cursorColumn} (marked with 🔸)
 ${visibilityInfo}
 Content:
 ${contentText}
 ${'='.repeat(80)}`;
+  }).join('\n\n');
+  
+  // Combine all sections into one comprehensive report
+  const separator = '\n' + '='.repeat(80) + '\n\n';
+  return [
+    `## OPEN TABS SUMMARY`,
+    `${tabSummary}`,
+    `\n## ALL OPEN BUFFERS (${resource.allBuffers.length})`,
+    `${allBuffersSummary}`,
+    `\n## BUFFERS VISIBLE IN CURRENT TAB (${resource.windows.length})`,
+    `${visibleBuffersContent || "No visible buffers found in current tab"}`
+  ].join('\n');
+}
 }
 
 // Add the buffers resource with URI scheme neovim-buffer://
@@ -443,12 +648,14 @@ server.resource(
   async (uri) => {
     try {
       // Get the current buffers
-      const buffers = await getBufferContents();
+      const { buffers, allBuffers, tabs } = await getBufferContents();
       
       const resource: BufferResource = {
         uri: uri.toString(),
         name: "Neovim Buffers",
         windows: buffers,
+        allBuffers,
+        tabs,
         timestamp: new Date().toISOString()
       };
       
@@ -463,7 +670,7 @@ server.resource(
           {
             uri: uri.toString(),
             mimeType: "text/plain",
-            text: buffers.map(buffer => formatBufferContent(buffer)).join('\n\n')
+            text: formatBufferContent(resource)
           }
         ]
       };
