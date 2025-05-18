@@ -10,37 +10,16 @@ import * as path from 'path';
 // Socket utilities
 import { normalizeSocketPath, checkSocketExists, getSocketTroubleshootingGuidance, isTimeoutError } from './socket-utils.js';
 
-// Define types for working with the MCP SDK
-// These interfaces match the actual neovim Node.js client API structure
-interface NeovimBuffer {
-  name: Promise<string>;
-  number: Promise<number>;
-  length: Promise<number>;
-  id: Promise<number>;
-  getLines: (start: number, end: number, strict: boolean) => Promise<string[]>;
-}
+// Import from neovim package but use 'any' type for flexibility
+// The actual neovim types are complex and can cause TS errors
 
-interface NeovimWindow {
-  number: Promise<number>;
-  buffer: Promise<NeovimBuffer>;
-  cursor: Promise<[number, number]>;
-}
-
-interface NeovimClient {
-  windows: Promise<NeovimWindow[]>;
-  window: Promise<NeovimWindow>;
-  command: (cmd: string) => Promise<void>;
-  commandOutput: (cmd: string) => Promise<string>;
-  apiInfo: () => Promise<any>;
-  request: (method: string, args: any[]) => Promise<any>;
-  // Note: We're removing disconnect as it doesn't exist in the library
-}
-
+// We use ToolResponse for formatting our API responses
 type ToolResponse = {
   content: Array<{ type: string; text: string }>;
   isError?: boolean;
 };
 
+// Simple interface for error handling
 interface ErrorWithMessage {
   message: string;
 }
@@ -64,7 +43,7 @@ try {
 }
 
 // Connect to Neovim via socket
-let nvim: NeovimClient;
+let nvim: any;
 
 // Define the timeout for checking if connection is alive
 const NVIM_API_TIMEOUT_MS = 1000;
@@ -109,7 +88,7 @@ async function isNeovimAlive(): Promise<boolean> {
   
   try {
     // Use our withTimeout utility to add a timeout to the API call
-    await withTimeout<any>(
+    await withTimeout(
       nvim.apiInfo(),
       NVIM_API_TIMEOUT_MS,
       'Timeout checking Neovim connection'
@@ -301,12 +280,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "view_buffers": {
         try {
           // Get all windows with timeout protection - nvim.windows is already a Promise
-          const windows = await withTimeout<NeovimWindow[]>(
+          const windows = await withTimeout(
             nvim.windows,
             NVIM_RPC_TIMEOUT_MS,
             'Timeout getting Neovim windows'
           );
-          const currentWindow = await withTimeout<NeovimWindow>(
+          const currentWindow = await withTimeout(
             nvim.window,
             NVIM_RPC_TIMEOUT_MS,
             'Timeout getting current Neovim window'
@@ -317,19 +296,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           // Process each window
           for (const window of windows) {
             try {
-              const windowNumber = await withTimeout<number>(
+              const windowNumber = await withTimeout(
                 window.number,
                 NVIM_RPC_TIMEOUT_MS,
                 'Timeout getting window number'
               );
-              const isCurrentWindow = (await withTimeout<number>(
+              const isCurrentWindow = (await withTimeout(
                 currentWindow.number,
                 NVIM_RPC_TIMEOUT_MS,
                 'Timeout getting current window number'
               )) === windowNumber;
               
               // Get window's buffer
-              const buffer = await withTimeout<NeovimBuffer>(
+              const buffer = await withTimeout(
                 window.buffer,
                 NVIM_RPC_TIMEOUT_MS,
                 'Timeout getting buffer for window'
@@ -349,26 +328,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               }
               
               // Get buffer info
-              const bufferName = await withTimeout<string>(
+              const bufferName = await withTimeout(
                 buffer.name,
                 NVIM_RPC_TIMEOUT_MS,
                 'Timeout getting buffer name'
               );
-              const bufferNumber = await withTimeout<number>(
+              const bufferNumber = await withTimeout(
                 buffer.number,
                 NVIM_RPC_TIMEOUT_MS,
                 'Timeout getting buffer number'
               );
               
               // Get cursor position
-              const cursor = await withTimeout<[number, number]>(
+              const cursor = await withTimeout(
                 window.cursor,
                 NVIM_RPC_TIMEOUT_MS,
                 'Timeout getting cursor position'
               );
               
               // Get buffer line count using buffer.length
-              const bufLen = await withTimeout<number>(
+              const bufLen = await withTimeout(
                 buffer.length,
                 NVIM_RPC_TIMEOUT_MS,
                 'Timeout getting buffer length'
@@ -378,7 +357,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               // Get the buffer content
               let content: string[] = [];
               try {
-                content = await withTimeout<string[]>(
+                content = await withTimeout(
                   buffer.getLines(0, lineCount, false),
                   NVIM_RPC_TIMEOUT_MS,
                   'Timeout getting buffer lines'
@@ -386,7 +365,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               } catch (getlinesError) {
                 try {
                   // Fall back to direct API call
-                  const bufferId = await withTimeout<number>(
+                  const bufferId = await withTimeout(
                     buffer.id,
                     NVIM_RPC_TIMEOUT_MS,
                     'Timeout getting buffer ID'
@@ -394,7 +373,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   const start = 0;
                   const end = Math.max(1, lineCount);
                   
-                  content = await withTimeout<string[]>(
+                  content = await withTimeout(
                     nvim.request('nvim_buf_get_lines', [
                       bufferId,
                       start,
@@ -488,7 +467,7 @@ ${'='.repeat(80)}`;
         
         try {
           // Execute keys in normal mode with timeout protection
-          await withTimeout<void>(
+          await withTimeout(
             nvim.command(`normal! ${parsed.data.keys}`),
             NVIM_RPC_TIMEOUT_MS,
             `Timeout sending normal mode command: ${parsed.data.keys}`
@@ -536,7 +515,7 @@ ${'='.repeat(80)}`;
         
         try {
           // Execute command and get output with timeout protection
-          const output = await withTimeout<string>(
+          const output = await withTimeout(
             nvim.commandOutput(parsed.data.command),
             NVIM_RPC_TIMEOUT_MS,
             `Timeout executing command: ${parsed.data.command}`
