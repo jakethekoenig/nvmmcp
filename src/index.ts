@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { Server as ServerType } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { attach } from 'neovim';
 import { z } from "zod";
@@ -408,11 +409,13 @@ server.resource(
   new ResourceTemplate("neovim-buffer://current", { 
     list: async () => {
       // List only the current buffer resource
-      return [{ 
-        uri: "neovim-buffer://current",
-        name: "Current Neovim Buffers",
-        mimeType: "application/json"
-      }];
+      return {
+        resources: [{ 
+          uri: "neovim-buffer://current",
+          name: "Current Neovim Buffers",
+          mimeType: "application/json"
+        }]
+      };
     }
   }),
   async (uri) => {
@@ -451,8 +454,9 @@ server.resource(
 // Add the normal mode tool
 server.tool(
   "send_normal_mode",
-  SendNormalModeArgsSchema,
-  async ({ keys }) => {
+  { keys: z.string().describe("Normal mode keystrokes to send to Neovim") },
+  async (params) => {
+    const { keys } = params.arguments;
     try {
       // Ensure we're connected to Neovim
       if (!isNeovimConnected()) {
@@ -507,7 +511,7 @@ server.tool(
         );
         
         // After changing buffer state, send a notification that buffers changed
-        server.server.sendNotification({
+        server.sendNotification({
           method: "resources/changed",
           params: {
             resources: ["neovim-buffer://current"]
@@ -559,8 +563,9 @@ server.tool(
 // Add the command mode tool
 server.tool(
   "send_command_mode",
-  SendCommandModeArgsSchema,
-  async ({ command }) => {
+  { command: z.string().describe("Command mode command to execute in Neovim") },
+  async (params) => {
+    const { command } = params.arguments;
     try {
       // Ensure we're connected to Neovim
       if (!isNeovimConnected()) {
@@ -615,7 +620,7 @@ server.tool(
         );
         
         // After changing buffer state, send a notification that buffers changed
-        server.server.sendNotification({
+        server.sendNotification({
           method: "resources/changed",
           params: {
             resources: ["neovim-buffer://current"]
@@ -688,7 +693,8 @@ async function runServer() {
       nvim.on('notification', (method: string, _args: any[]) => {
         if (method === 'buffer_changed') {
           // Send notification that buffer resources have changed
-          server.server.sendNotification({
+          const mcpServer = server.server as ServerType;
+          mcpServer.sendNotification({
             method: "resources/changed",
             params: {
               resources: ["neovim-buffer://current"]
@@ -716,7 +722,7 @@ runServer().catch((error) => {
   process.exit(1);
 });
 
-// Start server
+// Main function to run the server
 async function runServer() {
   // Try to connect to Neovim, but continue even if it fails
   const connected = await connectToNeovim();
@@ -727,6 +733,33 @@ async function runServer() {
   
   if (connected) {
     console.error("Neovim MCP Server running on stdio with active Neovim connection");
+    
+    // Setup buffer change monitoring if connected
+    try {
+      // Subscribe to buffer events to detect changes
+      await nvim.command('augroup MCPBufferMonitor');
+      await nvim.command('autocmd!');
+      await nvim.command('autocmd BufEnter,BufWritePost,CursorMoved,CursorMovedI * call rpcnotify(0, "buffer_changed")');
+      await nvim.command('augroup END');
+      
+      // Handle buffer change notifications
+      nvim.on('notification', (method: string, _args: any[]) => {
+        if (method === 'buffer_changed') {
+          // Send notification that buffer resources have changed
+          const mcpServer = server.server as ServerType;
+          mcpServer.sendNotification({
+            method: "resources/changed",
+            params: {
+              resources: ["neovim-buffer://current"]
+            }
+          });
+        }
+      });
+      
+      console.error("Buffer change monitoring enabled");
+    } catch (error) {
+      console.error("Failed to setup buffer change monitoring:", error);
+    }
   } else {
     console.error("Neovim MCP Server running on stdio WITHOUT Neovim connection");
     console.error(`Connection failed or timed out after ${NVIM_CONNECTION_TIMEOUT_MS}ms`);

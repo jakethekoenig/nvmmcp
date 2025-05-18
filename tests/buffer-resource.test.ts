@@ -87,11 +87,13 @@ describe('buffer resource', () => {
       "buffers",
       new ResourceTemplate("neovim-buffer://current", { 
         list: async () => {
-          return [{ 
-            uri: "neovim-buffer://current",
-            name: "Current Neovim Buffers",
-            mimeType: "application/json"
-          }];
+          return {
+            resources: [{ 
+              uri: "neovim-buffer://current",
+              name: "Current Neovim Buffers",
+              mimeType: "application/json"
+            }]
+          };
         }
       }),
       async () => ({ contents: [] })
