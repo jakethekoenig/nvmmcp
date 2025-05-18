@@ -478,7 +478,7 @@ server.tool(
   "send_normal_mode",
   { keys: z.string().describe("Normal mode keystrokes to send to Neovim") },
   async (params) => {
-    const { keys } = params.arguments;
+    const { keys } = params;
     try {
       // Ensure we're connected to Neovim
       if (!isNeovimConnected()) {
@@ -533,7 +533,7 @@ server.tool(
         );
         
         // After changing buffer state, send a notification that buffers changed
-        server.notification({
+        server.server.notification({
           method: "resources/changed",
           params: {
             resources: ["neovim-buffer://current"]
@@ -587,7 +587,7 @@ server.tool(
   "send_command_mode",
   { command: z.string().describe("Command mode command to execute in Neovim") },
   async (params) => {
-    const { command } = params.arguments;
+    const { command } = params;
     try {
       // Ensure we're connected to Neovim
       if (!isNeovimConnected()) {
@@ -642,7 +642,7 @@ server.tool(
         );
         
         // After changing buffer state, send a notification that buffers changed
-        server.notification({
+        server.server.notification({
           method: "resources/changed",
           params: {
             resources: ["neovim-buffer://current"]
@@ -716,7 +716,7 @@ async function runServer() {
         if (method === 'buffer_changed') {
           // Send notification that buffer resources have changed
           const mcpServer = server.server as ServerType;
-          server.notification({
+          server.server.notification({
             method: "resources/changed",
             params: {
               resources: ["neovim-buffer://current"]
@@ -744,6 +744,3 @@ runServer().catch((error) => {
   process.exit(1);
 });
 
-  console.error("Fatal error running server:", error);
-  process.exit(1);
-});
