@@ -18,13 +18,13 @@ This MCP server provides tools and resources for AI model interaction with Neovi
 ## Installation
 
 ```bash
-npm install -g nvmmcp
+npm install -g @abanteai/nvmmcp
 ```
 
 Or use without installing:
 
 ```bash
-npx nvmmcp /path/to/socket
+npx @abanteai/nvmmcp /path/to/socket
 ```
 
 ## Usage
@@ -48,7 +48,7 @@ Add this server to your MCP configuration:
       "command": "npx",
       "args": [
         "-y",
-        "nvmmcp",
+        "@abanteai/nvmmcp",
         "/tmp/nvmmcp_bridge"
       ]
     }
