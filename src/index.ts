@@ -43,6 +43,9 @@ function isNeovimConnected(): boolean {
   return nvim !== undefined && nvim !== null;
 }
 
+// Define the connection timeout constant
+const NVIM_CONNECTION_TIMEOUT_MS = 2000;
+
 // Function to connect to Neovim with better error handling
 async function connectToNeovim(): Promise<boolean> {
   console.error(`Connecting to Neovim via socket: ${socketPath}`);
@@ -55,21 +58,21 @@ async function connectToNeovim(): Promise<boolean> {
     return false;
   }
   
+  // Connection options with shorter timeout to prevent hanging 
+  const options = { 
+    socket: socketPath,
+    // Set timeout to 2 seconds (in milliseconds)
+    timeout: NVIM_CONNECTION_TIMEOUT_MS
+  };
+  
   try {
-    // Connection options with shorter timeout to prevent hanging 
-    const options = { 
-      socket: socketPath,
-      // Set timeout to 2 seconds (in milliseconds)
-      timeout: 2000
-    };
-    
     nvim = await attach(options);
     console.error("Successfully connected to Neovim");
     return true;
   } catch (error) {
     const isTimeout = isTimeoutError(error);
     if (isTimeout) {
-      console.error(`Timed out connecting to Neovim (${options.timeout}ms). The Neovim process is probably not running or not listening on this socket.`);
+      console.error(`Timed out connecting to Neovim (${NVIM_CONNECTION_TIMEOUT_MS}ms). The Neovim process is probably not running or not listening on this socket.`);
     } else {
       console.error(`Failed to connect to Neovim: ${error}`);
     }
@@ -354,7 +357,7 @@ async function runServer() {
     console.error("Neovim MCP Server running on stdio with active Neovim connection");
   } else {
     console.error("Neovim MCP Server running on stdio WITHOUT Neovim connection");
-    console.error(`Connection failed or timed out after 2 seconds`);
+    console.error(`Connection failed or timed out after ${NVIM_CONNECTION_TIMEOUT_MS}ms`);
     console.error(`The server will retry connecting when tools are used`);
     console.error(`To fix this issue:`);
     console.error(`1. Make sure Neovim is running`);
