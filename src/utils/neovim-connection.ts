@@ -3,7 +3,7 @@
  */
 
 import { attach } from 'neovim';
-import { checkSocketExists, getSocketTroubleshootingGuidance, isTimeoutError } from '../socket-utils.js';
+import { checkSocketExists, getSocketTroubleshootingGuidance, isTimeoutError } from './sockets.js';
 import { withTimeout, NVIM_API_TIMEOUT_MS, NVIM_CONNECTION_TIMEOUT_MS } from './timeout.js';
 
 // Neovim client reference
