@@ -206,16 +206,42 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               continue;
             }
             
-            // Get buffer info
-            const bufferName = await buffer.name;
-            const bufferNumber = await buffer.number;
+            // Get buffer info with error handling
+            let bufferName, bufferNumber;
+            try {
+              bufferName = await buffer.name;
+            } catch (error) {
+              bufferName = "Error retrieving buffer name";
+            }
             
-            // Get cursor position
-            const cursor = await window.cursor;
+            try {
+              bufferNumber = await buffer.number;
+            } catch (error) {
+              bufferNumber = "Unknown";
+            }
             
-            // Get buffer line count using buffer.length
-            const bufLen = await buffer.length;
-            const lineCount = parseInt(String(bufLen), 10);
+            // Get cursor position with error handling
+            let cursor;
+            try {
+              cursor = await window.cursor;
+            } catch (error) {
+              cursor = [0, 0]; // Default cursor position if error
+            }
+            
+            // Get buffer line count using buffer.length with error handling
+            let lineCount = 0;
+            try {
+              const bufLen = await buffer.length;
+              lineCount = parseInt(String(bufLen), 10);
+              
+              // Ensure lineCount is a valid number
+              if (isNaN(lineCount)) {
+                lineCount = 0;
+              }
+            } catch (error) {
+              console.error(`Error getting buffer length: ${error}`);
+              lineCount = 0; // Default to 0 if we can't get the length
+            }
             
             // Get the buffer content
             let content = [];
@@ -273,10 +299,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         
         // Format the result as text
         const formattedResult = result.map(window => {
-          return `Window ${window.windowNumber}${window.isCurrentWindow ? ' (current)' : ''} - Buffer ${window.bufferNumber} (${window.bufferName})
-Cursor at line ${window.cursor[0]}, column ${window.cursor[1]}
+          // Handle potential undefined values with defaults
+          const windowNumberText = window.windowNumber !== undefined ? window.windowNumber : 'N/A';
+          const bufferNumberText = window.bufferNumber !== undefined ? window.bufferNumber : 'N/A';
+          const bufferNameText = window.bufferName || 'Unnamed';
+          const cursorLine = window.cursor?.[0] !== undefined ? window.cursor[0] : 'N/A';
+          const cursorColumn = window.cursor?.[1] !== undefined ? window.cursor[1] : 'N/A';
+          
+          // Ensure content is a string
+          const contentText = window.content || "No content available";
+          
+          return `Window ${windowNumberText}${window.isCurrentWindow ? ' (current)' : ''} - Buffer ${bufferNumberText} (${bufferNameText})
+Cursor at line ${cursorLine}, column ${cursorColumn}
 Content:
-${window.content}
+${contentText}
 ${'='.repeat(80)}`;
         }).join('\n\n');
         
