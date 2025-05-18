@@ -6,7 +6,7 @@ import { z } from "zod";
 import * as path from 'path';
 
 // Import socket utilities
-import { normalizeSocketPath } from './socket-utils.js';
+import { normalizeSocketPath } from './utils/sockets.js';
 
 // Import connection utilities
 import { 
