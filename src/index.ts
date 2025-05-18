@@ -11,11 +11,35 @@ import * as path from 'path';
 import { normalizeSocketPath, checkSocketExists, getSocketTroubleshootingGuidance, isTimeoutError } from './socket-utils.js';
 
 /**
+ * Interface for window information with position data
+ */
+interface WindowInfo {
+  number: number | string;
+  bufferNumber?: number | string;
+  bufferName?: string;
+  isModified?: boolean;
+  position: {
+    row: number;
+    col: number;
+    width: number;
+    height: number;
+  };
+}
+
+/**
+ * Interface for the layout information return type
+ */
+interface LayoutInfo {
+  type: string;
+  description: string;
+}
+
+/**
  * Determines the window layout (vertical or horizontal splits) based on window positions
  * @param windows Array of window information objects with position data
  * @returns Object with layout type and description
  */
-function determineWindowLayout(windows) {
+function determineWindowLayout(windows: WindowInfo[]): LayoutInfo {
   if (!windows || windows.length <= 1) {
     return { type: 'single', description: 'Single window' };
   }
