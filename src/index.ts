@@ -38,9 +38,57 @@ try {
 // Connect to Neovim via socket
 let nvim: NeovimClient;
 
+// Define the timeout for checking if connection is alive
+const NVIM_API_TIMEOUT_MS = 1000;
+
+// Define timeout for RPC operations to prevent hanging
+const NVIM_RPC_TIMEOUT_MS = 2000;
+
+/**
+ * Wraps a promise with a timeout to prevent hanging operations
+ * @param promise The promise to wrap with a timeout
+ * @param timeoutMs Timeout in milliseconds
+ * @param errorMessage Custom error message for timeout
+ * @returns The result of the promise, or throws if timeout exceeded
+ */
+async function withTimeout<T>(
+  promise: Promise<T>, 
+  timeoutMs: number = NVIM_RPC_TIMEOUT_MS, 
+  errorMessage: string = 'Operation timed out'
+): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => 
+      setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
+    )
+  ]);
+}
+
 // Check if Neovim connection is ready and connected
 function isNeovimConnected(): boolean {
   return nvim !== undefined && nvim !== null;
+}
+
+// Check if the Neovim connection is alive by sending a test command
+async function isNeovimAlive(): Promise<boolean> {
+  if (!isNeovimConnected()) {
+    return false;
+  }
+  
+  try {
+    // Use our withTimeout utility to add a timeout to the API call
+    await withTimeout(
+      nvim.apiInfo(),
+      NVIM_API_TIMEOUT_MS,
+      'Timeout checking Neovim connection'
+    );
+    
+    // If we get here, the command succeeded
+    return true;
+  } catch (error) {
+    console.error(`Neovim connection check failed: ${error}`);
+    return false;
+  }
 }
 
 // Define the connection timeout constant
@@ -169,8 +217,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     const { name, arguments: args } = request.params;
     
-    // Ensure we're connected to Neovim
+    // Ensure we're connected to Neovim and the connection is alive
     if (!isNeovimConnected()) {
+      // Try to establish a new connection
       const connected = await connectToNeovim();
       if (!connected) {
         return {
@@ -180,122 +229,226 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   `This is likely because:\n` +
                   `1. Neovim is not running\n` +
                   `2. Neovim was not started with the '--listen ${socketPath}' option\n` +
-                  `3. The connection timed out after 2 seconds\n\n` +
+                  `3. The connection timed out after ${NVIM_CONNECTION_TIMEOUT_MS}ms\n\n` +
                   `Please start Neovim with: nvim --listen ${socketPath}`
           }],
           isError: true
         } as ToolResponse;
+      }
+    } else {
+      // Check if the existing connection is still alive
+      const connectionAlive = await isNeovimAlive();
+      if (!connectionAlive) {
+        console.error("Neovim connection is stale, attempting to reconnect...");
+        
+        // Close the stale connection
+        try {
+          await nvim.disconnect();
+        } catch (e) {
+          // Ignore errors when disconnecting a stale connection
+        }
+        
+        // Reset the connection
+        nvim = null as any;
+        
+        // Try to reconnect
+        const reconnected = await connectToNeovim();
+        if (!reconnected) {
+          return {
+            content: [{ 
+              type: "text", 
+              text: `Error: Lost connection to Neovim.\n` + 
+                    `The Neovim process may have been closed or crashed.\n` +
+                    `Attempted to reconnect but failed after ${NVIM_CONNECTION_TIMEOUT_MS}ms.\n\n` +
+                    `Please ensure Neovim is running with: nvim --listen ${socketPath}`
+            }],
+            isError: true
+          } as ToolResponse;
+        }
       }
     }
 
     // Handle different tools
     switch (name) {
       case "view_buffers": {
-        // Get all windows
-        const windows = await nvim.windows;
-        const currentWindow = await nvim.window;
-        
-        let result = [];
-        
-        // Process each window
-        for (const window of windows) {
-          try {
-            const windowNumber = await window.number;
-            const isCurrentWindow = (await currentWindow.number) === windowNumber;
+        try {
+          // Get all windows with timeout protection
+          const windows = await withTimeout(
+            nvim.windows,
+            NVIM_RPC_TIMEOUT_MS,
+            'Timeout getting Neovim windows'
+          );
+          const currentWindow = await withTimeout(
+            nvim.window,
+            NVIM_RPC_TIMEOUT_MS,
+            'Timeout getting current Neovim window'
+          );
+          
+          let result = [];
+          
+          // Process each window
+          for (const window of windows) {
+            try {
+              const windowNumber = await withTimeout(
+                window.number,
+                NVIM_RPC_TIMEOUT_MS,
+                'Timeout getting window number'
+              );
+              const isCurrentWindow = (await withTimeout(
+                currentWindow.number,
+                NVIM_RPC_TIMEOUT_MS,
+                'Timeout getting current window number'
+              )) === windowNumber;
+              
+              // Get window's buffer
+              const buffer = await withTimeout(
+                window.buffer,
+                NVIM_RPC_TIMEOUT_MS,
+                'Timeout getting buffer for window'
+              );
+              
+              // Check if buffer is defined
+              if (!buffer) {
+                result.push({
+                  windowNumber,
+                  isCurrentWindow,
+                  bufferNumber: "Unknown",
+                  bufferName: "Buffer is undefined",
+                  cursor: [0, 0],
+                  content: "Error: Buffer object is undefined"
+                });
+                continue;
+              }
+              
+              // Get buffer info
+              const bufferName = await withTimeout(
+                buffer.name,
+                NVIM_RPC_TIMEOUT_MS,
+                'Timeout getting buffer name'
+              );
+              const bufferNumber = await withTimeout(
+                buffer.number,
+                NVIM_RPC_TIMEOUT_MS,
+                'Timeout getting buffer number'
+              );
+              
+              // Get cursor position
+              const cursor = await withTimeout(
+                window.cursor,
+                NVIM_RPC_TIMEOUT_MS,
+                'Timeout getting cursor position'
+              );
+              
+              // Get buffer line count using buffer.length
+              const bufLen = await withTimeout(
+                buffer.length,
+                NVIM_RPC_TIMEOUT_MS,
+                'Timeout getting buffer length'
+              );
+              const lineCount = parseInt(String(bufLen), 10);
+              
+              // Get the buffer content
+              let content = [];
+              try {
+                content = await withTimeout(
+                  buffer.getLines(0, lineCount, false),
+                  NVIM_RPC_TIMEOUT_MS,
+                  'Timeout getting buffer lines'
+                );
+              } catch (getlinesError) {
+                try {
+                  // Fall back to direct API call
+                  const bufferId = await withTimeout(
+                    buffer.id,
+                    NVIM_RPC_TIMEOUT_MS,
+                    'Timeout getting buffer ID'
+                  );
+                  const start = 0;
+                  const end = Math.max(1, lineCount);
+                  
+                  content = await withTimeout(
+                    nvim.request('nvim_buf_get_lines', [
+                      bufferId,
+                      start,
+                      end,
+                      false
+                    ]),
+                    NVIM_RPC_TIMEOUT_MS,
+                    'Timeout making direct nvim_buf_get_lines request'
+                  );
+                } catch (apiError) {
+                  content = [`Error getting buffer content: ${apiError}`];
+                }
+              }
             
-            // Get window's buffer
-            const buffer = await window.buffer;
-            
-            // Check if buffer is defined
-            if (!buffer) {
+              // Format content with cursor marker
+              const contentWithCursor = content.map((line: string, idx: number) => {
+                if (isCurrentWindow && idx === cursor[0] - 1) {
+                  // Insert cursor marker at the position
+                  const beforeCursor = line.substring(0, cursor[1]);
+                  const afterCursor = line.substring(cursor[1]);
+                  return `${beforeCursor}|${afterCursor}`;
+                }
+                return line;
+              });
+              
+              // Add window info to result
               result.push({
                 windowNumber,
                 isCurrentWindow,
-                bufferNumber: "Unknown",
-                bufferName: "Buffer is undefined",
-                cursor: [0, 0],
-                content: "Error: Buffer object is undefined"
+                bufferNumber,
+                bufferName: bufferName || "Unnamed",
+                cursor,
+                content: contentWithCursor.join('\n')
               });
-              continue;
+            } catch (windowError) {
+              result.push({
+                windowNumber: "Error",
+                isCurrentWindow: false,
+                bufferNumber: "Error",
+                bufferName: "Error processing window",
+                cursor: [0, 0],
+                content: `Error processing window: ${windowError}`
+              });
             }
-            
-            // Get buffer info
-            const bufferName = await buffer.name;
-            const bufferNumber = await buffer.number;
-            
-            // Get cursor position
-            const cursor = await window.cursor;
-            
-            // Get buffer line count using buffer.length
-            const bufLen = await buffer.length;
-            const lineCount = parseInt(String(bufLen), 10);
-            
-            // Get the buffer content
-            let content = [];
-            try {
-              content = await buffer.getLines(0, lineCount, false);
-            } catch (getlinesError) {
-              try {
-                // Fall back to direct API call
-                const bufferId = await buffer.id;
-                const start = 0;
-                const end = Math.max(1, lineCount);
-                
-                content = await nvim.request('nvim_buf_get_lines', [
-                  bufferId,
-                  start,
-                  end,
-                  false
-                ]);
-              } catch (apiError) {
-                content = [`Error getting buffer content: ${apiError}`];
-              }
-            }
-            
-            // Format content with cursor marker
-            const contentWithCursor = content.map((line: string, idx: number) => {
-              if (isCurrentWindow && idx === cursor[0] - 1) {
-                // Insert cursor marker at the position
-                const beforeCursor = line.substring(0, cursor[1]);
-                const afterCursor = line.substring(cursor[1]);
-                return `${beforeCursor}|${afterCursor}`;
-              }
-              return line;
-            });
-            
-            // Add window info to result
-            result.push({
-              windowNumber,
-              isCurrentWindow,
-              bufferNumber,
-              bufferName: bufferName || "Unnamed",
-              cursor,
-              content: contentWithCursor.join('\n')
-            });
-          } catch (windowError) {
-            result.push({
-              windowNumber: "Error",
-              isCurrentWindow: false,
-              bufferNumber: "Error",
-              bufferName: "Error processing window",
-              cursor: [0, 0],
-              content: `Error processing window: ${windowError}`
-            });
           }
-        }
-        
-        // Format the result as text
-        const formattedResult = result.map(window => {
-          return `Window ${window.windowNumber}${window.isCurrentWindow ? ' (current)' : ''} - Buffer ${window.bufferNumber} (${window.bufferName})
+          
+          // Format the result as text
+          const formattedResult = result.map(window => {
+            return `Window ${window.windowNumber}${window.isCurrentWindow ? ' (current)' : ''} - Buffer ${window.bufferNumber} (${window.bufferName})
 Cursor at line ${window.cursor[0]}, column ${window.cursor[1]}
 Content:
 ${window.content}
 ${'='.repeat(80)}`;
-        }).join('\n\n');
-        
-        return {
-          content: [{ type: "text", text: formattedResult || "No visible buffers found" }]
-        } as ToolResponse;
+          }).join('\n\n');
+          
+          return {
+            content: [{ type: "text", text: formattedResult || "No visible buffers found" }]
+          } as ToolResponse;
+        } catch (error) {
+          // Handle timeout errors specifically
+          if (error.message && error.message.includes('Timeout')) {
+            console.error(`Timeout error in view_buffers: ${error.message}`);
+            return {
+              content: [{ 
+                type: "text", 
+                text: `Error: Neovim RPC operation timed out after ${NVIM_RPC_TIMEOUT_MS}ms.\n` +
+                      `The Neovim process may have been closed or become unresponsive.\n` +
+                      `Please check if Neovim is still running and listening on ${socketPath}.`
+              }],
+              isError: true
+            } as ToolResponse;
+          }
+          
+          // Handle other errors
+          return {
+            content: [{ 
+              type: "text", 
+              text: `Error in view_buffers: ${error}`
+            }],
+            isError: true
+          } as ToolResponse;
+        }
       }
       
       case "send_normal_mode": {
@@ -304,15 +457,45 @@ ${'='.repeat(80)}`;
           throw new Error(`Invalid arguments for send_normal_mode: ${parsed.error}`);
         }
         
-        // Execute keys in normal mode
-        await nvim.command(`normal! ${parsed.data.keys}`);
-        
-        return {
-          content: [{ 
-            type: "text", 
-            text: `Successfully sent normal mode keystrokes: ${parsed.data.keys}` 
-          }]
-        } as ToolResponse;
+        try {
+          // Execute keys in normal mode with timeout protection
+          await withTimeout(
+            nvim.command(`normal! ${parsed.data.keys}`),
+            NVIM_RPC_TIMEOUT_MS,
+            `Timeout sending normal mode command: ${parsed.data.keys}`
+          );
+          
+          return {
+            content: [{ 
+              type: "text", 
+              text: `Successfully sent normal mode keystrokes: ${parsed.data.keys}` 
+            }]
+          } as ToolResponse;
+        } catch (error) {
+          // Handle timeout errors specifically
+          if (error.message && error.message.includes('Timeout')) {
+            console.error(`Timeout error in send_normal_mode: ${error.message}`);
+            return {
+              content: [{ 
+                type: "text", 
+                text: `Error: Neovim RPC operation timed out after ${NVIM_RPC_TIMEOUT_MS}ms.\n` +
+                      `The Neovim process may have been closed or become unresponsive.\n` +
+                      `Failed to send normal mode keystrokes: ${parsed.data.keys}\n` +
+                      `Please check if Neovim is still running and listening on ${socketPath}.`
+              }],
+              isError: true
+            } as ToolResponse;
+          }
+          
+          // Handle other errors
+          return {
+            content: [{ 
+              type: "text", 
+              text: `Error sending normal mode keystrokes: ${error}`
+            }],
+            isError: true
+          } as ToolResponse;
+        }
       }
       
       case "send_command_mode": {
@@ -321,15 +504,45 @@ ${'='.repeat(80)}`;
           throw new Error(`Invalid arguments for send_command_mode: ${parsed.error}`);
         }
         
-        // Execute command and get output
-        const output = await nvim.commandOutput(parsed.data.command);
-        
-        return {
-          content: [{ 
-            type: "text", 
-            text: `Command: ${parsed.data.command}\nOutput:\n${output}` 
-          }]
-        } as ToolResponse;
+        try {
+          // Execute command and get output with timeout protection
+          const output = await withTimeout(
+            nvim.commandOutput(parsed.data.command),
+            NVIM_RPC_TIMEOUT_MS,
+            `Timeout executing command: ${parsed.data.command}`
+          );
+          
+          return {
+            content: [{ 
+              type: "text", 
+              text: `Command: ${parsed.data.command}\nOutput:\n${output}` 
+            }]
+          } as ToolResponse;
+        } catch (error) {
+          // Handle timeout errors specifically
+          if (error.message && error.message.includes('Timeout')) {
+            console.error(`Timeout error in send_command_mode: ${error.message}`);
+            return {
+              content: [{ 
+                type: "text", 
+                text: `Error: Neovim RPC operation timed out after ${NVIM_RPC_TIMEOUT_MS}ms.\n` +
+                      `The Neovim process may have been closed or become unresponsive.\n` +
+                      `Failed to execute command: ${parsed.data.command}\n` +
+                      `Please check if Neovim is still running and listening on ${socketPath}.`
+              }],
+              isError: true
+            } as ToolResponse;
+          }
+          
+          // Handle other errors
+          return {
+            content: [{ 
+              type: "text", 
+              text: `Error executing command: ${error}`
+            }],
+            isError: true
+          } as ToolResponse;
+        }
       }
       
       default:
