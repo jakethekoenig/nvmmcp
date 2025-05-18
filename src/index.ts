@@ -11,28 +11,29 @@ import * as path from 'path';
 import { normalizeSocketPath, checkSocketExists, getSocketTroubleshootingGuidance, isTimeoutError } from './socket-utils.js';
 
 // Define types for working with the MCP SDK
+// These interfaces match the actual neovim Node.js client API structure
 interface NeovimBuffer {
-  name: string;
-  number: number;
-  length: number;
-  id: number;
+  name: Promise<string>;
+  number: Promise<number>;
+  length: Promise<number>;
+  id: Promise<number>;
   getLines: (start: number, end: number, strict: boolean) => Promise<string[]>;
 }
 
 interface NeovimWindow {
-  number: number;
+  number: Promise<number>;
   buffer: Promise<NeovimBuffer>;
-  cursor: [number, number];
+  cursor: Promise<[number, number]>;
 }
 
 interface NeovimClient {
-  windows: NeovimWindow[];
-  window: NeovimWindow;
+  windows: Promise<NeovimWindow[]>;
+  window: Promise<NeovimWindow>;
   command: (cmd: string) => Promise<void>;
   commandOutput: (cmd: string) => Promise<string>;
   apiInfo: () => Promise<any>;
   request: (method: string, args: any[]) => Promise<any>;
-  disconnect: () => Promise<void>;
+  // Note: We're removing disconnect as it doesn't exist in the library
 }
 
 type ToolResponse = {
@@ -72,17 +73,20 @@ const NVIM_API_TIMEOUT_MS = 1000;
 const NVIM_RPC_TIMEOUT_MS = 2000;
 
 /**
- * Wraps a promise with a timeout to prevent hanging operations
- * @param promise The promise to wrap with a timeout
+ * Wraps a promise or value with a timeout to prevent hanging operations
+ * @param valueOrPromise The promise or value to wrap with a timeout
  * @param timeoutMs Timeout in milliseconds
  * @param errorMessage Custom error message for timeout
- * @returns The result of the promise, or throws if timeout exceeded
+ * @returns The result of the promise/value, or throws if timeout exceeded
  */
 async function withTimeout<T>(
-  promise: Promise<T>, 
+  valueOrPromise: T | Promise<T>, 
   timeoutMs: number = NVIM_RPC_TIMEOUT_MS, 
   errorMessage: string = 'Operation timed out'
 ): Promise<T> {
+  // Ensure we're working with a promise
+  const promise = Promise.resolve(valueOrPromise);
+  
   // Use Promise.race with explicit typing to preserve the return type
   return Promise.race<T>([
     promise,
@@ -269,12 +273,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (!connectionAlive) {
         console.error("Neovim connection is stale, attempting to reconnect...");
         
-        // Close the stale connection
-        try {
-          await nvim.disconnect();
-        } catch (e) {
-          // Ignore errors when disconnecting a stale connection
-        }
+        // Since there's no disconnect method in the neovim client,
+        // we'll just reset the connection
         
         // Reset the connection
         nvim = null as any;
@@ -300,7 +300,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     switch (name) {
       case "view_buffers": {
         try {
-          // Get all windows with timeout protection
+          // Get all windows with timeout protection - nvim.windows is already a Promise
           const windows = await withTimeout<NeovimWindow[]>(
             nvim.windows,
             NVIM_RPC_TIMEOUT_MS,
