@@ -15,6 +15,31 @@ export interface ErrorWithMessage {
   message: string;
 }
 
+/**
+ * Interface for window information with position data
+ */
+export interface WindowInfo {
+  number: number | string;
+  bufferNumber?: number | string;
+  bufferName?: string;
+  isModified?: boolean;
+  position?: {
+    row: number;
+    col: number;
+    width: number;
+    height: number;
+  };
+  error?: string;
+}
+
+/**
+ * Interface for the layout information return type
+ */
+export interface LayoutInfo {
+  type: string;
+  description: string;
+}
+
 // Schema definitions for the tool arguments
 export const ViewBuffersArgsSchema = z.object({}).optional();
 
