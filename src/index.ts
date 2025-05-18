@@ -619,9 +619,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               return `${tabHeader}\nError: ${tab.error}`;
             }
             
-            const windowsInfo = tab.windows.map(win => 
-              `  Window ${win.number}: Buffer ${win.bufferNumber} (${win.bufferName})`
-            ).join('\n');
+            const windowsInfo = tab.windows.map(win => {
+              // Handle undefined buffer numbers with a default value
+              const bufferNumber = win.bufferNumber !== undefined ? win.bufferNumber : 'N/A';
+              return `  Window ${win.number}: Buffer ${bufferNumber} (${win.bufferName})`;
+            }).join('\n');
             
             return `${tabHeader}\n${windowsInfo || '  No windows'}`;
           }).join('\n\n');
@@ -633,9 +635,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             return numA - numB;
           });
           
-          const allBuffersSummary = allBuffersInfo.map(buf => 
-            `Buffer ${buf.number}: ${buf.name}${buf.isLoaded ? '' : ' (not loaded)'}`
-          ).join('\n');
+          const allBuffersSummary = allBuffersInfo.map(buf => {
+            // Handle undefined buffer numbers with a default value
+            const bufferNumber = buf.number !== undefined ? buf.number : 'N/A';
+            return `Buffer ${bufferNumber}: ${buf.name}${buf.isLoaded ? '' : ' (not loaded)'}`;
+          }).join('\n');
           
           // Format the visible buffers (in current tab) as text with visible range information
           const visibleBuffersContent = result.map(window => {
