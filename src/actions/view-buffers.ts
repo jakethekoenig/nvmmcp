@@ -359,16 +359,20 @@ export async function viewBuffers(): Promise<ToolResponse> {
     }
     
     // Format all buffers list
-    const buffersListText = allBuffersInfo.map(buf => 
-      `Buffer ${buf.number}: ${buf.name}${buf.isLoaded ? ' (loaded)' : ''}`
-    ).join('\n');
+    const buffersListText = allBuffersInfo.map(buf => {
+      // Handle undefined buffer numbers with a default value
+      const bufferNumber = buf.number !== undefined ? buf.number : 'N/A';
+      return `Buffer ${bufferNumber}: ${buf.name}${buf.isLoaded ? ' (loaded)' : ''}`;
+    }).join('\n');
     
     // Format tabs list with windows
     const tabsListText = tabsInfo.map(tab => {
       const tabHeader = `Tab ${tab.number}${tab.isCurrent ? ' (current)' : ''}:`;
-      const windowsList = tab.windows.map(win => 
-        `  - Window ${win.number} - Buffer ${win.bufferNumber} (${win.bufferName})`
-      ).join('\n');
+      const windowsList = tab.windows.map(win => {
+        // Handle undefined buffer numbers with a default value
+        const bufferNumber = win.bufferNumber !== undefined ? win.bufferNumber : 'N/A';
+        return `  - Window ${win.number} - Buffer ${bufferNumber} (${win.bufferName})`;
+      }).join('\n');
       
       return `${tabHeader}\n${windowsList}`;
     }).join('\n\n');
