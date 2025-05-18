@@ -101,7 +101,7 @@ const server = new Server(
 const tools = [
   {
     name: "view_buffers",
-    description: "View the content of visible buffers with cursor position",
+    description: "View the visible portion of buffers in Neovim with cursor position. Shows approximately ±100 lines around the cursor position rather than the entire file. The cursor position is marked with a 🔸 emoji.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -217,21 +217,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const bufLen = await buffer.length;
             const lineCount = parseInt(String(bufLen), 10);
             
-            // Get the buffer content
+            // Calculate the range of lines to show (±100 lines around cursor)
+            const cursorLine = cursor[0] - 1; // Convert to 0-based index
+            const contextLines = 100; // Number of lines to show above and below cursor
+            const startLine = Math.max(0, cursorLine - contextLines);
+            const endLine = Math.min(lineCount, cursorLine + contextLines + 1);
+            
+            // Get the buffer content (only the lines around the cursor)
             let content = [];
             try {
-              content = await buffer.getLines(0, lineCount, false);
+              content = await buffer.getLines(startLine, endLine, false);
             } catch (getlinesError) {
               try {
                 // Fall back to direct API call
                 const bufferId = await buffer.id;
-                const start = 0;
-                const end = Math.max(1, lineCount);
-                
                 content = await nvim.request('nvim_buf_get_lines', [
                   bufferId,
-                  start,
-                  end,
+                  startLine,
+                  endLine,
                   false
                 ]);
               } catch (apiError) {
@@ -239,25 +242,39 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               }
             }
             
-            // Format content with cursor marker
+            // Format content with cursor emoji
+            const cursorEmoji = "🔸"; // Cursor indicator emoji
             const contentWithCursor = content.map((line: string, idx: number) => {
-              if (isCurrentWindow && idx === cursor[0] - 1) {
-                // Insert cursor marker at the position
+              const actualLineNumber = startLine + idx;
+              if (isCurrentWindow && actualLineNumber === cursorLine) {
+                // Insert cursor emoji at the position
                 const beforeCursor = line.substring(0, cursor[1]);
                 const afterCursor = line.substring(cursor[1]);
-                return `${beforeCursor}|${afterCursor}`;
+                return `${beforeCursor}${cursorEmoji}${afterCursor}`;
               }
               return line;
             });
             
-            // Add window info to result
+            // Add line numbers to content and format with cursor position info
+            const formattedContent = contentWithCursor.map((line, idx) => {
+              const lineNumber = startLine + idx + 1; // Convert to 1-based for display
+              return `${lineNumber.toString().padStart(5, ' ')}: ${line}`;
+            });
+            
+            // Add window info to result with context information
             result.push({
               windowNumber,
               isCurrentWindow,
               bufferNumber,
               bufferName: bufferName || "Unnamed",
               cursor,
-              content: contentWithCursor.join('\n')
+              totalLines: lineCount,
+              visibleRange: {
+                startLine: startLine + 1, // Convert to 1-based for display
+                endLine: endLine,
+                context: contextLines
+              },
+              content: formattedContent.join('\n')
             });
           } catch (windowError) {
             result.push({
@@ -271,10 +288,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
         }
         
-        // Format the result as text
+        // Format the result as text with visible range information
         const formattedResult = result.map(window => {
+          const visibilityInfo = window.visibleRange 
+            ? `Showing lines ${window.visibleRange.startLine}-${window.visibleRange.endLine} of ${window.totalLines} total lines (±${window.visibleRange.context} lines around cursor)`
+            : 'Full content';
+            
           return `Window ${window.windowNumber}${window.isCurrentWindow ? ' (current)' : ''} - Buffer ${window.bufferNumber} (${window.bufferName})
-Cursor at line ${window.cursor[0]}, column ${window.cursor[1]}
+Cursor at line ${window.cursor[0]}, column ${window.cursor[1]} (marked with 🔸)
+${visibilityInfo}
 Content:
 ${window.content}
 ${'='.repeat(80)}`;
