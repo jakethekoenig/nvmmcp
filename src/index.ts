@@ -168,7 +168,7 @@ const server = new Server(
 const tools = [
   {
     name: "view_buffers",
-    description: "View the visible portion of buffers in Neovim with cursor position. Shows approximately ±100 lines around the cursor position rather than the entire file. The cursor position is marked with a 🔸 emoji. Clearly identifies the active buffer (the one that will be affected by normal mode commands) with a 🟢 indicator.",
+    description: "View information about Neovim buffers and tabs. Shows: 1) A summary of all open tabs and their contents, 2) A list of all open buffers with numbers and filenames, and 3) Detailed content of visible buffers in the current tab. For visible buffers, shows approximately ±100 lines around the cursor position. The cursor position is marked with a 🔸 emoji. Clearly identifies the active buffer (the one that will be affected by normal mode commands) with a 🟢 indicator.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -279,22 +279,160 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     switch (name) {
       case "view_buffers": {
         try {
-          // Get all windows with timeout protection - nvim.windows is already a Promise
-          const windows = await withTimeout(
-            nvim.windows,
+          // Get current tab page
+          const currentTabpage = await withTimeout(
+            nvim.tabpage,
             NVIM_RPC_TIMEOUT_MS,
-            'Timeout getting Neovim windows'
+            'Timeout getting current tabpage'
           );
+          
+          const currentTabNumber = await withTimeout(
+            currentTabpage.number,
+            NVIM_RPC_TIMEOUT_MS,
+            'Timeout getting current tabpage number'
+          );
+          
+          // Get all tabpages
+          const tabpages = await withTimeout(
+            nvim.tabpages,
+            NVIM_RPC_TIMEOUT_MS,
+            'Timeout getting all tabpages'
+          );
+          
+          // Get windows in current tab
+          const windowsInCurrentTab = await withTimeout(
+            currentTabpage.windows,
+            NVIM_RPC_TIMEOUT_MS,
+            'Timeout getting windows in current tab'
+          );
+          
           const currentWindow = await withTimeout(
             nvim.window,
             NVIM_RPC_TIMEOUT_MS,
             'Timeout getting current Neovim window'
           );
           
+          // Get list of all buffers
+          const allBuffers = await withTimeout(
+            nvim.buffers,
+            NVIM_RPC_TIMEOUT_MS,
+            'Timeout getting all buffers'
+          );
+          
+          // Get info about all open buffers
+          let allBuffersInfo = [];
+          for (const buffer of allBuffers) {
+            try {
+              const bufferNumber = await withTimeout(
+                buffer.number,
+                NVIM_RPC_TIMEOUT_MS,
+                'Timeout getting buffer number'
+              );
+              
+              const bufferName = await withTimeout(
+                buffer.name,
+                NVIM_RPC_TIMEOUT_MS,
+                'Timeout getting buffer name'
+              );
+              
+              // Check if buffer is loaded
+              const isLoaded = await withTimeout(
+                nvim.request('nvim_buf_is_loaded', [buffer.id]),
+                NVIM_RPC_TIMEOUT_MS,
+                'Timeout checking if buffer is loaded'
+              );
+              
+              allBuffersInfo.push({
+                number: bufferNumber,
+                name: bufferName || 'Unnamed',
+                isLoaded
+              });
+            } catch (bufferError) {
+              allBuffersInfo.push({
+                number: "Error",
+                name: "Error retrieving buffer info",
+                isLoaded: false
+              });
+            }
+          }
+          
+          // Get tab information
+          let tabsInfo = [];
+          for (const tabpage of tabpages) {
+            try {
+              const tabNumber = await withTimeout(
+                tabpage.number,
+                NVIM_RPC_TIMEOUT_MS,
+                'Timeout getting tab number'
+              );
+              
+              const tabWindows = await withTimeout(
+                tabpage.windows,
+                NVIM_RPC_TIMEOUT_MS,
+                'Timeout getting tab windows'
+              );
+              
+              let windowsInfo = [];
+              for (const win of tabWindows) {
+                try {
+                  const windowNumber = await withTimeout(
+                    win.number,
+                    NVIM_RPC_TIMEOUT_MS,
+                    'Timeout getting window number'
+                  );
+                  
+                  const buffer = await withTimeout(
+                    win.buffer,
+                    NVIM_RPC_TIMEOUT_MS,
+                    'Timeout getting window buffer'
+                  );
+                  
+                  const bufferNumber = await withTimeout(
+                    buffer.number,
+                    NVIM_RPC_TIMEOUT_MS,
+                    'Timeout getting buffer number'
+                  );
+                  
+                  const bufferName = await withTimeout(
+                    buffer.name,
+                    NVIM_RPC_TIMEOUT_MS,
+                    'Timeout getting buffer name'
+                  );
+                  
+                  windowsInfo.push({
+                    number: windowNumber,
+                    bufferNumber,
+                    bufferName: bufferName || 'Unnamed'
+                  });
+                } catch (windowError) {
+                  windowsInfo.push({
+                    number: "Error",
+                    bufferNumber: "Error",
+                    bufferName: "Error retrieving window info"
+                  });
+                }
+              }
+              
+              tabsInfo.push({
+                number: tabNumber,
+                isCurrent: tabNumber === currentTabNumber,
+                windows: windowsInfo
+              });
+            } catch (tabError) {
+              tabsInfo.push({
+                number: "Error",
+                isCurrent: false,
+                windows: [],
+                error: `Error retrieving tab info: ${tabError}`
+              });
+            }
+          }
+          
+          // Process windows in current tab
           let result = [];
           
-          // Process each window
-          for (const window of windows) {
+          // Only process windows in the current tab
+          for (const window of windowsInCurrentTab) {
             try {
               const windowNumber = await withTimeout(
                 window.number,
@@ -473,8 +611,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
           }
           
-          // Format the result as text with visible range information
-          const formattedResult = result.map(window => {
+          // Format tab summary
+          const tabSummary = tabsInfo.map(tab => {
+            const tabHeader = `Tab ${tab.number}${tab.isCurrent ? ' (current)' : ''}`;
+            
+            if (tab.error) {
+              return `${tabHeader}\nError: ${tab.error}`;
+            }
+            
+            const windowsInfo = tab.windows.map(win => 
+              `  Window ${win.number}: Buffer ${win.bufferNumber} (${win.bufferName})`
+            ).join('\n');
+            
+            return `${tabHeader}\n${windowsInfo || '  No windows'}`;
+          }).join('\n\n');
+          
+          // Format all buffers summary
+          allBuffersInfo.sort((a, b) => {
+            const numA = typeof a.number === 'number' ? a.number : -1;
+            const numB = typeof b.number === 'number' ? b.number : -1;
+            return numA - numB;
+          });
+          
+          const allBuffersSummary = allBuffersInfo.map(buf => 
+            `Buffer ${buf.number}: ${buf.name}${buf.isLoaded ? '' : ' (not loaded)'}`
+          ).join('\n');
+          
+          // Format the visible buffers (in current tab) as text with visible range information
+          const visibleBuffersContent = result.map(window => {
             // Handle potential undefined values with defaults
             const windowNumberText = window.windowNumber !== undefined ? window.windowNumber : 'N/A';
             const bufferNameText = window.bufferName || 'Unnamed';
@@ -512,8 +676,19 @@ ${contentText}
 ${'='.repeat(80)}`;
           }).join('\n\n');
           
+          // Combine all sections into one comprehensive report
+          const separator = '\n' + '='.repeat(80) + '\n\n';
+          const finalReport = [
+            `## OPEN TABS SUMMARY`,
+            `${tabSummary}`,
+            `\n## ALL OPEN BUFFERS (${allBuffersInfo.length})`,
+            `${allBuffersSummary}`,
+            `\n## BUFFERS VISIBLE IN CURRENT TAB (${result.length})`,
+            `${visibleBuffersContent || "No visible buffers found in current tab"}`
+          ].join('\n');
+          
           return {
-            content: [{ type: "text", text: formattedResult || "No visible buffers found" }]
+            content: [{ type: "text", text: finalReport }]
           } as ToolResponse;
         } catch (error) {
           // Handle timeout errors specifically
