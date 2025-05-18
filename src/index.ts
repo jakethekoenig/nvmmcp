@@ -101,7 +101,7 @@ const server = new Server(
 const tools = [
   {
     name: "view_buffers",
-    description: "View the visible portion of buffers in Neovim with cursor position. Shows approximately ±100 lines around the cursor position rather than the entire file. The cursor position is marked with a 🔸 emoji.",
+    description: "View the visible portion of buffers in Neovim with cursor position. Shows approximately ±100 lines around the cursor position rather than the entire file. The cursor position is marked with a 🔸 emoji. Clearly identifies the active buffer (the one that will be affected by normal mode commands) with a 🟢 indicator.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -265,6 +265,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             result.push({
               windowNumber,
               isCurrentWindow,
+              isActiveBuffer: isCurrentWindow, // The buffer in the current window is the active one
               bufferNumber,
               bufferName: bufferName || "Unnamed",
               cursor,
@@ -293,8 +294,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           const visibilityInfo = window.visibleRange 
             ? `Showing lines ${window.visibleRange.startLine}-${window.visibleRange.endLine} of ${window.totalLines} total lines (±${window.visibleRange.context} lines around cursor)`
             : 'Full content';
+          
+          // Create a prominent indicator for the active buffer
+          const activeBufferIndicator = window.isActiveBuffer 
+            ? ' 🟢 [ACTIVE BUFFER - Commands in normal mode will affect this buffer]' 
+            : '';
             
-          return `Window ${window.windowNumber}${window.isCurrentWindow ? ' (current)' : ''} - Buffer ${window.bufferNumber} (${window.bufferName})
+          return `Window ${window.windowNumber}${window.isCurrentWindow ? ' (current)' : ''} - Buffer ${window.bufferNumber} (${window.bufferName})${activeBufferIndicator}
 Cursor at line ${window.cursor[0]}, column ${window.cursor[1]} (marked with 🔸)
 ${visibilityInfo}
 Content:
