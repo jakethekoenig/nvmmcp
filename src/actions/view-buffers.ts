@@ -78,11 +78,19 @@ export async function viewBuffers(): Promise<ToolResponse> {
           NVIM_RPC_TIMEOUT_MS,
           'Timeout checking if buffer is loaded'
         );
-        
+              
+        // Check if buffer is modified (has unsaved changes)
+        const isModified = await withTimeout(
+          nvim.request('nvim_buf_get_option', [buffer.id, 'modified']),
+          NVIM_RPC_TIMEOUT_MS,
+          'Timeout checking if buffer is modified'
+        );
+              
         allBuffersInfo.push({
           number: bufferNumber,
           name: bufferName || 'Unnamed',
-          isLoaded
+          isLoaded,
+          isModified
         });
       } catch (bufferError) {
         allBuffersInfo.push({
@@ -145,10 +153,18 @@ export async function viewBuffers(): Promise<ToolResponse> {
               'Timeout getting buffer name'
             );
             
+            // Check if buffer is modified (has unsaved changes)
+            const isModified = await withTimeout(
+              nvim.request('nvim_buf_get_option', [buffer.id, 'modified']),
+              NVIM_RPC_TIMEOUT_MS,
+              'Timeout checking if buffer is modified'
+            );
+            
             windowsInfo.push({
               number: windowNumber,
               bufferName: bufferName || "Unnamed",
-              bufferNumber
+              bufferNumber,
+              isModified
             });
           } catch (winError) {
             windowsInfo.push({
@@ -222,6 +238,13 @@ export async function viewBuffers(): Promise<ToolResponse> {
           buffer.number,
           NVIM_RPC_TIMEOUT_MS,
           'Timeout getting buffer number'
+        );
+          
+        // Check if buffer is modified (has unsaved changes)
+        const isModified = await withTimeout(
+          nvim.request('nvim_buf_get_option', [buffer.id, 'modified']),
+          NVIM_RPC_TIMEOUT_MS,
+          'Timeout checking if buffer is modified'
         );
         
         // Get cursor position
@@ -337,6 +360,7 @@ export async function viewBuffers(): Promise<ToolResponse> {
           isActiveBuffer: isCurrentWindow, // The buffer in the current window is the active one
           bufferNumber,
           bufferName: bufferName || "Unnamed",
+          isModified,
           cursor,
           totalLines: lineCount,
           visibleRange: {
@@ -359,16 +383,24 @@ export async function viewBuffers(): Promise<ToolResponse> {
     }
     
     // Format all buffers list
-    const buffersListText = allBuffersInfo.map(buf => 
-      `Buffer ${buf.number}: ${buf.name}${buf.isLoaded ? ' (loaded)' : ''}`
-    ).join('\n');
+    const buffersListText = allBuffersInfo.map(buf => {
+      // Handle undefined buffer numbers with a default value
+      const bufferNumber = buf.number !== undefined ? buf.number : 'N/A';
+      // Add [+] indicator for modified buffers
+      const modifiedIndicator = buf.isModified ? ' [+]' : '';
+      return `Buffer ${bufferNumber}: ${buf.name}${modifiedIndicator}${buf.isLoaded ? ' (loaded)' : ''}`;
+    }).join('\n');
     
     // Format tabs list with windows
     const tabsListText = tabsInfo.map(tab => {
       const tabHeader = `Tab ${tab.number}${tab.isCurrent ? ' (current)' : ''}:`;
-      const windowsList = tab.windows.map(win => 
-        `  - Window ${win.number} - Buffer ${win.bufferNumber} (${win.bufferName})`
-      ).join('\n');
+      const windowsList = tab.windows.map(win => {
+        // Handle undefined buffer numbers with a default value
+        const bufferNumber = win.bufferNumber !== undefined ? win.bufferNumber : 'N/A';
+        // Add [+] indicator for modified buffers
+        const modifiedIndicator = win.isModified ? ' [+]' : '';
+        return `  - Window ${win.number} - Buffer ${bufferNumber} (${win.bufferName}${modifiedIndicator})`;
+      }).join('\n');
       
       return `${tabHeader}\n${windowsList}`;
     }).join('\n\n');
@@ -401,8 +433,9 @@ export async function viewBuffers(): Promise<ToolResponse> {
         windowHeader += ` - Buffer ${window.bufferNumber}`;
       }
       
-      // Add buffer name and active indicator
-      windowHeader += ` (${bufferNameText})${activeBufferIndicator}`;
+      // Add buffer name, modified indicator, and active indicator
+      const modifiedIndicator = window.isModified ? ' [+]' : '';
+      windowHeader += ` (${bufferNameText}${modifiedIndicator})${activeBufferIndicator}`;
         
       return `${windowHeader}
 Cursor at line ${cursorLine}, column ${cursorColumn} (marked with 🔸)
