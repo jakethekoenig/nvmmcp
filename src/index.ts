@@ -27,9 +27,6 @@ import { sendCommandMode } from './actions/send-command-mode.js';
 // Import resources
 import { getNvimUserView } from './resources/nvim-user-view.js';
 
-// Import types
-import { ToolResponse } from './utils/types.js';
-
 // Get the Neovim socket path from command line arguments
 let socketPath: string;
 try {
@@ -88,22 +85,55 @@ async function ensureNeovimConnection() {
   }
 }
 
+// Function to transform our action responses to McpServer format
+async function adaptToolResponse(responsePromise: Promise<any>) {
+  try {
+    const response = await responsePromise;
+    // If the response already has the correct format, return it
+    if (response && typeof response === 'object' && Array.isArray(response.content)) {
+      // Make sure type is strictly "text"
+      const adaptedContent = response.content.map((item: any) => {
+        if (item.type && typeof item.text === 'string') {
+          return { type: "text" as const, text: item.text };
+        }
+        return item;
+      });
+      
+      return {
+        content: adaptedContent,
+        isError: response.isError
+      };
+    }
+    
+    // If not, create a properly formatted response
+    return {
+      content: [{ type: "text" as const, text: String(response) }]
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return {
+      content: [{ type: "text" as const, text: `Error: ${errorMessage}` }],
+      isError: true
+    };
+  }
+}
+
 // Register tools
 server.tool(
   "view_buffers",
-  {},
+  "View the visible portion of buffers in Neovim with cursor position. Shows approximately ±100 lines around the cursor position rather than the entire file.",
   async () => {
-    try {
-      await ensureNeovimConnection();
-      const result = await viewBuffers();
-      return result;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      return {
-        content: [{ type: "text", text: `Error: ${errorMessage}` }],
-        isError: true,
-      } as ToolResponse;
-    }
+    await ensureNeovimConnection();
+    const result = await viewBuffers();
+    
+    // Transform to the format expected by McpServer
+    return {
+      content: result.content.map(item => ({
+        type: "text" as const,
+        text: item.text
+      })),
+      isError: result.isError
+    };
   }
 );
 
@@ -113,16 +143,17 @@ server.tool(
     keys: z.string().describe("Normal mode keystrokes to send to Neovim")
   },
   async (args) => {
-    try {
-      await ensureNeovimConnection();
-      return await sendNormalMode(args);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      return {
-        content: [{ type: "text", text: `Error: ${errorMessage}` }],
-        isError: true,
-      } as ToolResponse;
-    }
+    await ensureNeovimConnection();
+    const result = await sendNormalMode(args);
+    
+    // Transform to the format expected by McpServer
+    return {
+      content: result.content.map(item => ({
+        type: "text" as const,
+        text: item.text
+      })),
+      isError: result.isError
+    };
   }
 );
 
@@ -132,16 +163,17 @@ server.tool(
     command: z.string().describe("Command mode command to execute in Neovim")
   },
   async (args) => {
-    try {
-      await ensureNeovimConnection();
-      return await sendCommandMode(args);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      return {
-        content: [{ type: "text", text: `Error: ${errorMessage}` }],
-        isError: true,
-      } as ToolResponse;
-    }
+    await ensureNeovimConnection();
+    const result = await sendCommandMode(args);
+    
+    // Transform to the format expected by McpServer
+    return {
+      content: result.content.map(item => ({
+        type: "text" as const,
+        text: item.text
+      })),
+      isError: result.isError
+    };
   }
 );
 
