@@ -135,4 +135,4 @@ The integration test validates that:
 
 ## License
 
-ISC
+MIT
