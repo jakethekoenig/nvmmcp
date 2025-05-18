@@ -301,7 +301,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const formattedResult = result.map(window => {
           // Handle potential undefined values with defaults
           const windowNumberText = window.windowNumber !== undefined ? window.windowNumber : 'N/A';
-          const bufferNumberText = window.bufferNumber !== undefined ? window.bufferNumber : 'N/A';
           const bufferNameText = window.bufferName || 'Unnamed';
           const cursorLine = window.cursor?.[0] !== undefined ? window.cursor[0] : 'N/A';
           const cursorColumn = window.cursor?.[1] !== undefined ? window.cursor[1] : 'N/A';
@@ -309,7 +308,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           // Ensure content is a string
           const contentText = window.content || "No content available";
           
-          return `Window ${windowNumberText}${window.isCurrentWindow ? ' (current)' : ''} - Buffer ${bufferNumberText} (${bufferNameText})
+          // Construct window header with conditional buffer number
+          let windowHeader = `Window ${windowNumberText}${window.isCurrentWindow ? ' (current)' : ''}`;
+          
+          // Only add buffer number if it's defined
+          if (window.bufferNumber !== undefined) {
+            windowHeader += ` - Buffer ${window.bufferNumber}`;
+          }
+          
+          // Add buffer name
+          windowHeader += ` (${bufferNameText})`;
+          
+          return `${windowHeader}
 Cursor at line ${cursorLine}, column ${cursorColumn}
 Content:
 ${contentText}
