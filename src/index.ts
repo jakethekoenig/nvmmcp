@@ -533,7 +533,7 @@ server.tool(
         );
         
         // After changing buffer state, send a notification that buffers changed
-        server.sendNotification({
+        server.notification({
           method: "resources/changed",
           params: {
             resources: ["neovim-buffer://current"]
@@ -642,7 +642,7 @@ server.tool(
         );
         
         // After changing buffer state, send a notification that buffers changed
-        server.sendNotification({
+        server.notification({
           method: "resources/changed",
           params: {
             resources: ["neovim-buffer://current"]
@@ -716,7 +716,7 @@ async function runServer() {
         if (method === 'buffer_changed') {
           // Send notification that buffer resources have changed
           const mcpServer = server.server as ServerType;
-          mcpServer.sendNotification({
+          server.notification({
             method: "resources/changed",
             params: {
               resources: ["neovim-buffer://current"]
@@ -744,55 +744,6 @@ runServer().catch((error) => {
   process.exit(1);
 });
 
-// Main function to run the server
-async function runServer() {
-  // Try to connect to Neovim, but continue even if it fails
-  const connected = await connectToNeovim();
-  
-  // Start MCP server regardless of Neovim connection status
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  
-  if (connected) {
-    console.error("Neovim MCP Server running on stdio with active Neovim connection");
-    
-    // Setup buffer change monitoring if connected
-    try {
-      // Subscribe to buffer events to detect changes
-      await nvim.command('augroup MCPBufferMonitor');
-      await nvim.command('autocmd!');
-      await nvim.command('autocmd BufEnter,BufWritePost,CursorMoved,CursorMovedI * call rpcnotify(0, "buffer_changed")');
-      await nvim.command('augroup END');
-      
-      // Handle buffer change notifications
-      nvim.on('notification', (method: string, _args: any[]) => {
-        if (method === 'buffer_changed') {
-          // Send notification that buffer resources have changed
-          const mcpServer = server.server as ServerType;
-          mcpServer.sendNotification({
-            method: "resources/changed",
-            params: {
-              resources: ["neovim-buffer://current"]
-            }
-          });
-        }
-      });
-      
-      console.error("Buffer change monitoring enabled");
-    } catch (error) {
-      console.error("Failed to setup buffer change monitoring:", error);
-    }
-  } else {
-    console.error("Neovim MCP Server running on stdio WITHOUT Neovim connection");
-    console.error(`Connection failed or timed out after ${NVIM_CONNECTION_TIMEOUT_MS}ms`);
-    console.error(`The server will retry connecting when tools are used`);
-    console.error(`To fix this issue:`);
-    console.error(`1. Make sure Neovim is running`);
-    console.error(`2. Start Neovim with: nvim --listen ${socketPath}`);
-  }
-}
-
-runServer().catch((error) => {
   console.error("Fatal error running server:", error);
   process.exit(1);
 });
