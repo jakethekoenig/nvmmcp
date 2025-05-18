@@ -17,6 +17,14 @@ type ToolResponse = {
   isError?: boolean;
 };
 
+// Define types for resources
+type FileResource = {
+  path: string;
+  startLine?: number;
+  endLine?: number;
+  content: string;
+};
+
 // Get the Neovim socket path from command line arguments
 let socketPath: string;
 try {
@@ -93,6 +101,9 @@ const server = new Server(
   {
     capabilities: {
       tools: {},
+      resources: {
+        types: ["view_files"],
+      },
     },
   }
 );
@@ -151,9 +162,90 @@ const CallToolRequestSchema = z.object({
   }),
 });
 
+// Schema for view_files resource
+const FileResourceSchema = z.object({
+  path: z.string().describe("Path to the file to view"),
+  startLine: z.number().optional().describe("Starting line number (1-indexed)"),
+  endLine: z.number().optional().describe("Ending line number (1-indexed)"),
+});
+
+const CreateResourceRequestSchema = z.object({
+  method: z.literal("resources/create"),
+  params: z.object({
+    type: z.string(),
+    data: z.union([
+      // Single file schema
+      FileResourceSchema,
+      // Multiple files schema
+      z.array(FileResourceSchema),
+    ]),
+  }),
+});
+
 // Handle tools/list request
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return { tools };
+});
+
+// Handle resources/create request
+server.setRequestHandler(CreateResourceRequestSchema, async (request) => {
+  try {
+    const { type, data } = request.params;
+    
+    if (type !== "view_files") {
+      throw new Error(`Unsupported resource type: ${type}`);
+    }
+    
+    // Handle both single file and array of files
+    const files = Array.isArray(data) ? data : [data];
+    const resources: FileResource[] = [];
+    
+    for (const file of files) {
+      try {
+        const { path: filePath, startLine, endLine } = file;
+        
+        // Validate and normalize file path
+        if (!filePath) {
+          throw new Error("File path is required");
+        }
+        
+        // Read file content
+        const fileContent = await fs.readFile(filePath, 'utf-8');
+        const lines = fileContent.split('\n');
+        
+        // Handle line ranges
+        const start = startLine ? Math.max(0, startLine - 1) : 0; // Convert 1-indexed to 0-indexed
+        const end = endLine ? Math.min(lines.length, endLine) : lines.length;
+        
+        // Extract the specified lines
+        const contentLines = lines.slice(start, end);
+        const content = contentLines.join('\n');
+        
+        resources.push({
+          path: filePath,
+          startLine: startLine || 1,
+          endLine: endLine || lines.length,
+          content,
+        });
+      } catch (fileError) {
+        // Handle individual file error but continue processing other files
+        resources.push({
+          path: file.path,
+          startLine: file.startLine,
+          endLine: file.endLine,
+          content: `Error reading file: ${fileError instanceof Error ? fileError.message : String(fileError)}`,
+        });
+      }
+    }
+    
+    // Return a single resource or array based on the input
+    return {
+      resource: Array.isArray(data) ? resources : resources[0],
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`Error creating view_files resource: ${errorMessage}`);
+  }
 });
 
 // Handle tools/call request

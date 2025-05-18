@@ -1,6 +1,6 @@
 {
   "name": "nvmmcp",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Neovim MCP server for communicating with Neovim via RPC",
   "main": "dist/index.js",
   "bin": {

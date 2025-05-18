@@ -4,11 +4,17 @@ A Model Context Protocol (MCP) server that communicates with a local Neovim sess
 
 ## Features
 
-This MCP server provides three main tools for AI model interaction with Neovim:
+This MCP server provides tools and resources for AI model interaction with Neovim:
+
+### Tools
 
 1. **View Buffers**: See the content of visible buffers with cursor position rendered
 2. **Send Normal Mode Commands**: Execute normal mode keystrokes in Neovim
 3. **Send Command Mode Commands**: Execute command mode commands and get their output
+
+### Resources
+
+1. **View Files**: Access file contents through MCP resources, including line range selection
 
 ## Installation
 
@@ -51,13 +57,17 @@ Add this server to your MCP configuration:
 }
 ```
 
-### 3. Use the tools
+### 3. Use the tools and resources
 
 The following tools are available to the AI:
 
 - `view_buffers`: Shows the content of visible buffers with cursor position
 - `send_normal_mode`: Sends keystrokes to Neovim in normal mode
 - `send_command_mode`: Executes a command in Neovim's command mode and gets the output
+
+The following resources are available to the AI:
+
+- `view_files`: Accesses file contents with optional line range selection
 
 ## Development
 
@@ -132,6 +142,61 @@ The integration test validates that:
 - Normal mode commands can be sent and executed
 - Command mode commands can be sent and executed
 - File operations work correctly
+
+## Resource Usage Examples
+
+### View Files Resource
+
+The `view_files` resource allows AI models to access file contents through the MCP resources protocol.
+
+#### Single File
+
+```json
+{
+  "method": "resources/create",
+  "params": {
+    "type": "view_files",
+    "data": {
+      "path": "/path/to/file.txt"
+    }
+  }
+}
+```
+
+#### Single File with Line Range
+
+```json
+{
+  "method": "resources/create",
+  "params": {
+    "type": "view_files",
+    "data": {
+      "path": "/path/to/file.txt",
+      "startLine": 10,
+      "endLine": 20
+    }
+  }
+}
+```
+
+#### Multiple Files
+
+```json
+{
+  "method": "resources/create",
+  "params": {
+    "type": "view_files",
+    "data": [
+      { "path": "/path/to/file1.txt" },
+      { 
+        "path": "/path/to/file2.txt",
+        "startLine": 5,
+        "endLine": 15
+      }
+    ]
+  }
+}
+```
 
 ## License
 
