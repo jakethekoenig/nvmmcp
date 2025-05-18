@@ -386,6 +386,17 @@ async function getBufferContents(): Promise<BufferInfo[]> {
 
 // Format buffer content for display
 function formatBufferContent(bufferInfo: BufferInfo): string {
+  // Handle potential undefined values with defaults
+  const windowNumberText = bufferInfo.windowNumber !== undefined ? bufferInfo.windowNumber : 'N/A';
+  const bufferNameText = bufferInfo.bufferName || 'Unnamed';
+  const cursorLine = bufferInfo.cursor?.[0] !== undefined ? bufferInfo.cursor[0] : 'N/A';
+  const cursorColumn = bufferInfo.cursor?.[1] !== undefined ? bufferInfo.cursor[1] : 'N/A';
+  
+  // Ensure content is a string array and is properly joined
+  const contentText = Array.isArray(bufferInfo.content) && bufferInfo.content.length > 0 
+    ? bufferInfo.content.join('\n') 
+    : "No content available";
+  
   const visibilityInfo = bufferInfo.visibleRange 
     ? `Showing lines ${bufferInfo.visibleRange.startLine}-${bufferInfo.visibleRange.endLine} of ${bufferInfo.totalLines} total lines (±${bufferInfo.visibleRange.context} lines around cursor)`
     : 'Full content';
@@ -395,11 +406,22 @@ function formatBufferContent(bufferInfo: BufferInfo): string {
     ? ' 🟢 [ACTIVE BUFFER - Commands in normal mode will affect this buffer]' 
     : '';
     
-  return `Window ${bufferInfo.windowNumber}${bufferInfo.isCurrentWindow ? ' (current)' : ''} - Buffer ${bufferInfo.bufferNumber} (${bufferInfo.bufferName})${activeBufferIndicator}
-Cursor at line ${bufferInfo.cursor[0]}, column ${bufferInfo.cursor[1]} (marked with 🔸)
+  // Construct window header with conditional buffer number
+  let windowHeader = `Window ${windowNumberText}${bufferInfo.isCurrentWindow ? ' (current)' : ''}`;
+    
+  // Only add buffer number if it's defined
+  if (bufferInfo.bufferNumber !== undefined) {
+    windowHeader += ` - Buffer ${bufferInfo.bufferNumber}`;
+  }
+    
+  // Add buffer name and active indicator
+  windowHeader += ` (${bufferNameText})${activeBufferIndicator}`;
+    
+  return `${windowHeader}
+Cursor at line ${cursorLine}, column ${cursorColumn} (marked with 🔸)
 ${visibilityInfo}
 Content:
-${bufferInfo.content.join('\n')}
+${contentText}
 ${'='.repeat(80)}`;
 }
 
