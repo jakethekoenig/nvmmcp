@@ -18,7 +18,7 @@ interface WindowInfo {
   bufferNumber?: number | string;
   bufferName?: string;
   isModified?: boolean;
-  position: {
+  position?: {
     row: number;
     col: number;
     width: number;
@@ -44,18 +44,29 @@ function determineWindowLayout(windows: WindowInfo[]): LayoutInfo {
     return { type: 'single', description: 'Single window' };
   }
   
+  // Filter windows that have position data
+  const windowsWithPosition = windows.filter(w => w.position != null);
+  
+  // If we don't have enough windows with position data, return a default layout
+  if (windowsWithPosition.length <= 1) {
+    return {
+      type: windowsWithPosition.length === 1 ? 'single' : 'unknown',
+      description: windowsWithPosition.length === 1 ? 'Single window' : 'Unknown layout'
+    };
+  }
+  
   // Sort windows by position (row, col)
-  const sortedWindows = [...windows].sort((a, b) => {
+  const sortedWindows = [...windowsWithPosition].sort((a, b) => {
     // Sort by row first, then by column
-    if (a.position.row !== b.position.row) {
-      return a.position.row - b.position.row;
+    if (a.position!.row !== b.position!.row) {
+      return a.position!.row - b.position!.row;
     }
-    return a.position.col - b.position.col;
+    return a.position!.col - b.position!.col;
   });
   
   // Count how many unique row and column positions we have
-  const uniqueRows = new Set(sortedWindows.map(w => w.position.row)).size;
-  const uniqueCols = new Set(sortedWindows.map(w => w.position.col)).size;
+  const uniqueRows = new Set(sortedWindows.map(w => w.position!.row)).size;
+  const uniqueCols = new Set(sortedWindows.map(w => w.position!.col)).size;
   
   // Determine primary layout direction
   if (uniqueRows === 1 && uniqueCols > 1) {
@@ -447,7 +458,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 'Timeout getting tab windows'
               );
               
-              let windowsInfo = [];
+              let windowsInfo: WindowInfo[] = [];
               for (const win of tabWindows) {
                 try {
                   const windowNumber = await withTimeout(
@@ -516,7 +527,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   windowsInfo.push({
                     number: "Error",
                     bufferNumber: "Error",
-                    bufferName: "Error retrieving window info"
+                    bufferName: "Error retrieving window info",
+                    position: {
+                      row: 0,
+                      col: 0,
+                      width: 0,
+                      height: 0
+                    }
                   });
                 }
               }
