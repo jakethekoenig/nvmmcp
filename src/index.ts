@@ -628,7 +628,6 @@ ${'='.repeat(80)}`;
     `${visibleBuffersContent || "No visible buffers found in current tab"}`
   ].join('\n');
 }
-}
 
 // Add the buffers resource with URI scheme neovim-buffer://
 server.resource(
